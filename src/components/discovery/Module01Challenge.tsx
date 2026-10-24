@@ -81,8 +81,7 @@ export default function Module01Challenge({
   const handleAdvance = () => {
     const hasProblem =
       Boolean(challenge.currentSituation.trim()) || Boolean(challenge.criticalFriction.trim());
-    const hasObjective =
-      Boolean(challenge.expectedOutcome.trim()) || Boolean(challenge.title.trim());
+    const hasObjective = Boolean(challenge.expectedOutcome.trim());
 
     if (!hasProblem || !hasObjective) {
       setValidationNotice(

@@ -53,6 +53,7 @@ export default function Module02StrategicProfile({
   const [newRealConstraint, setNewRealConstraint] = useState('');
   const [newArtificialConstraint, setNewArtificialConstraint] = useState('');
   const [newUncertainty, setNewUncertainty] = useState('');
+  const [validationNotice, setValidationNotice] = useState<string | null>(null);
 
   const [showInlineQuiz, setShowInlineQuiz] = useState(false);
   const [quizStep, setQuizStep] = useState(0);
@@ -64,6 +65,22 @@ export default function Module02StrategicProfile({
   );
   const groundedPowers = deriveGroundedPowersForCase(challenge, profile);
   const isOrg = challenge.track === 'organizacion';
+
+  const handleAdvance = () => {
+    const hasDecodingSignal = Boolean(
+      profile.dominantThoughtPattern.trim() ||
+        profile.strategicHypothesis.trim() ||
+        profile.realConstraints.length > 0
+    );
+    if (!hasDecodingSignal) {
+      setValidationNotice(
+        'Registra al menos un patrón, una hipótesis de trabajo o una restricción real antes de pasar a Aplicar un Hack.'
+      );
+      return;
+    }
+    setValidationNotice(null);
+    onNext();
+  };
 
   const selectedArchetype = profile.archetypeHypothesis || null;
   const archetypeDetails = selectedArchetype
@@ -737,6 +754,12 @@ export default function Module02StrategicProfile({
         />
       </section>
 
+      {validationNotice && (
+        <div role="alert" className="p-4 rounded-xl chalamandra-surface-rose text-xs text-rose-100">
+          {validationNotice}
+        </div>
+      )}
+
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
@@ -749,7 +772,7 @@ export default function Module02StrategicProfile({
 
         <button
           type="button"
-          onClick={onNext}
+          onClick={handleAdvance}
           className="flex items-center gap-2.5 px-7 py-3.5 rounded-xl chalamandra-btn-primary font-bold text-xs cursor-pointer whitespace-nowrap"
         >
           <span>Continuar a Fase 03 · Aplicar un Hack</span>

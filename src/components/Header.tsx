@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Compass, Play } from 'lucide-react';
+import { FileText, Compass, Home } from 'lucide-react';
 import { ActiveView } from '../types';
 import {
   DISCOVERY_FIVE_PHASES,
@@ -15,7 +15,6 @@ interface HeaderProps {
   completionPct: number;
   onSelectModule: (moduleNum: number) => void;
   onOpenStartScreen: () => void;
-  onContinueSession: () => void;
 }
 
 export default function Header({
@@ -25,21 +24,20 @@ export default function Header({
   hasProgress,
   completionPct,
   onSelectModule,
-  onOpenStartScreen,
-  onContinueSession
+  onOpenStartScreen
 }: HeaderProps) {
   return (
     <header className="site-header no-print sticky top-0 z-40 backdrop-blur-xl bg-[#09080E]/92 border-b border-[#D4AF37]/38 shadow-[0_10px_30px_-14px_rgba(0,0,0,0.85)]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-6">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 min-h-16 py-2 flex items-center justify-between gap-3 sm:gap-6">
         {/* Zona 1: Emblema oficial + Wordmark */}
         <button
           type="button"
           onClick={onOpenStartScreen}
-          className="flex items-center gap-3 text-left cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ECC964] rounded-lg whitespace-nowrap shrink-0"
+          className="flex items-center gap-2 sm:gap-3 min-w-0 text-left cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ECC964] rounded-lg shrink"
           title="Ir a la Portada de la Sesión de Descubrimiento"
         >
           <ChalamandraMedallion size="md" />
-          <span className="font-display text-sm sm:text-base font-semibold tracking-wide text-[#F7F3EA] group-hover:text-[#FFF0BE] transition-colors whitespace-nowrap shrink-0">
+          <span className="font-display text-[10px] sm:text-base leading-tight font-semibold tracking-wide text-[#F7F3EA] group-hover:text-[#FFF0BE] transition-colors whitespace-normal sm:whitespace-nowrap min-w-0">
             Chalamandra Magistral <span className="text-[#ECC964]">DecoX</span>
           </span>
         </button>
@@ -98,23 +96,16 @@ export default function Header({
             <button
               type="button"
               onClick={onOpenStartScreen}
-              className="flex items-center gap-1.5 h-9 px-3.5 rounded-lg chalamandra-btn-secondary text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
+              aria-label="Portada"
+              className="flex items-center justify-center gap-1.5 h-9 px-2.5 sm:px-3.5 rounded-lg chalamandra-btn-secondary text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
             >
-              <span>Portada</span>
+              <Home className="w-4 h-4 sm:hidden" aria-hidden="true" />
+              <span className="hidden sm:inline">Portada</span>
             </button>
           )}
 
           {viewingStartScreen ? (
-            hasProgress ? (
-              <button
-                type="button"
-                onClick={onContinueSession}
-                className="flex items-center gap-2 h-9 px-4 rounded-lg chalamandra-btn-primary text-xs font-bold cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <Play className="w-3.5 h-3.5 fill-[#08070B] shrink-0" />
-                <span>Continuar sesión</span>
-              </button>
-            ) : (
+            hasProgress ? null : (
               <button
                 type="button"
                 onClick={() => onSelectModule(1)}

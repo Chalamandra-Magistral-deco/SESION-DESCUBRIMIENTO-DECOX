@@ -65,11 +65,6 @@ export default function App() {
         completionPct={sessionMeta.completionPct}
         onSelectModule={handleSelectModuleFromNav}
         onOpenStartScreen={() => handleSelectModuleFromNav(0)}
-        onContinueSession={() =>
-          handleSelectModuleFromNav(
-            sessionMeta.hasSavedProgress ? sessionMeta.activeModule || 1 : 1
-          )
-        }
       />
 
       <main className="relative z-10 flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-9">
