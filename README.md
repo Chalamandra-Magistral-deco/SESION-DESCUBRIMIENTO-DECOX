@@ -63,6 +63,10 @@ Requisitos: Node.js 20+ y Bun (el lockfile del repositorio es bun.lock).
     npm run build
     npm start
 
+Para verificar que el espejo metodológico coincide con la fuente canónica, clona también INTERACTIVE-DECOX y ejecuta:
+
+    npm run catalog:check -- /ruta/a/INTERACTIVE-DECOX
+
 El servidor compilado arranca con npm start. Para desarrollo usa npm run dev.
 
 Validación manual mínima:
