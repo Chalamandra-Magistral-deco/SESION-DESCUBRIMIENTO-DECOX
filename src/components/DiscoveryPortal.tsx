@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Target,
   Compass,
@@ -47,6 +47,8 @@ import Module04SrapOrientation from './discovery/Module04SrapOrientation';
 import Module07ExecutiveReport from './discovery/Module07ExecutiveReport';
 
 const STORAGE_KEY = 'decox_discovery_deliverable_v2';
+const DEMO_STORAGE_KEY = 'decox_discovery_demo_deliverable_v2';
+const ACTIVE_STORAGE_KEY = 'decox_discovery_active_storage_v1';
 const DEFAULT_HERO_VISUAL = '/images/sesion-descubrimiento-hero.jpg';
 
 interface DiscoveryPortalProps {
@@ -131,6 +133,42 @@ function getPhaseAccentClasses(phaseId: string): {
   }
 }
 
+function isDiscoveryPhasePopulated(state: DiscoveryDeliverableState, phaseNum: number): boolean {
+  if (phaseNum === 1) {
+    return Boolean(
+      state.challenge.expectedOutcome.trim() &&
+        (state.challenge.currentSituation.trim() || state.challenge.criticalFriction.trim())
+    );
+  }
+  if (phaseNum === 2) {
+    return Boolean(
+      state.strategicProfile.dominantThoughtPattern.trim() ||
+        state.strategicProfile.strategicHypothesis.trim() ||
+        state.strategicProfile.realConstraints.length > 0
+    );
+  }
+  if (phaseNum === 3) {
+    const hackId = state.selectedHackId;
+    if (!hackId) return false;
+    const answers = state.hackPlantillaResponses[hackId] || [];
+    return answers.some((answer) => Boolean(answer?.trim()));
+  }
+  if (phaseNum === 4) {
+    return Boolean(state.srapOrientation.activar.trim() && state.srapOrientation.pausa.trim());
+  }
+  if (phaseNum === 5) return Boolean(state.sessionCompleted);
+  return false;
+}
+
+function firstMissingPrerequisite(
+  state: DiscoveryDeliverableState,
+  targetPhaseNum: number
+) {
+  return DISCOVERY_FIVE_PHASES.find(
+    (phase) => phase.num < targetPhaseNum && !isDiscoveryPhasePopulated(state, phase.num)
+  ) || null;
+}
+
 function hasMeaningfulSavedData(state: DiscoveryDeliverableState): boolean {
   if (state.isDemoCase) return false;
   const hasPlantilla = Object.values(state.hackPlantillaResponses || {}).some(
@@ -197,6 +235,19 @@ function hydrateDiscoveryState(raw: Partial<DiscoveryDeliverableState>): Discove
   };
 }
 
+function readSavedRealDiscoveryState(): DiscoveryDeliverableState | null {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return null;
+    const parsed = JSON.parse(saved) as Partial<DiscoveryDeliverableState>;
+    if (!parsed?.challenge || !parsed.strategicProfile || parsed.isDemoCase) return null;
+    const hydrated = hydrateDiscoveryState(parsed);
+    return hasMeaningfulSavedData(hydrated) ? hydrated : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function DiscoveryPortal({
   setActiveView: _setActiveView,
   initialModule,
@@ -205,12 +256,22 @@ export default function DiscoveryPortal({
 }: DiscoveryPortalProps) {
   const [deliverableState, setDeliverableState] = useState<DiscoveryDeliverableState>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
+      const activeBucket = localStorage.getItem(ACTIVE_STORAGE_KEY);
+      const preferredKey = activeBucket === 'demo' ? DEMO_STORAGE_KEY : STORAGE_KEY;
+      const candidateKeys = [...new Set([preferredKey, STORAGE_KEY, DEMO_STORAGE_KEY])];
+      for (const key of candidateKeys) {
+        const saved = localStorage.getItem(key);
+        if (!saved) continue;
         const parsed = JSON.parse(saved) as Partial<DiscoveryDeliverableState>;
-        if (parsed && parsed.challenge && parsed.strategicProfile) {
-          return hydrateDiscoveryState(parsed);
+        if (!parsed || !parsed.challenge || !parsed.strategicProfile) continue;
+
+        // Migrate an older demo that was stored in the old single-session bucket.
+        if (key === STORAGE_KEY && parsed.isDemoCase) {
+          localStorage.setItem(DEMO_STORAGE_KEY, saved);
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.setItem(ACTIVE_STORAGE_KEY, 'demo');
         }
+        return hydrateDiscoveryState(parsed);
       }
     } catch {}
     return createBlankDiscoveryState(generateDiscoverySessionId('DX'), 'persona');
@@ -233,8 +294,19 @@ export default function DiscoveryPortal({
   const [confirmCoverNewSession, setConfirmCoverNewSession] = useState<boolean>(false);
   const [sessionVisual, setSessionVisual] = useState<string>(DEFAULT_HERO_VISUAL);
   const [heroImgFailed, setHeroImgFailed] = useState<boolean>(false);
+  const [navigationNotice, setNavigationNotice] = useState<string | null>(null);
 
   const hasSavedProgress = hasMeaningfulSavedData(deliverableState);
+  const savedRealSession = useMemo(
+    () => deliverableState.isDemoCase ? readSavedRealDiscoveryState() : null,
+    [deliverableState.isDemoCase, deliverableState.sessionId]
+  );
+  const hasSavedRealProgress = Boolean(savedRealSession);
+  const hasCoverProgress = hasSavedProgress || hasSavedRealProgress;
+  const coverSessionState = hasSavedProgress ? deliverableState : savedRealSession || deliverableState;
+  const coverCompletion = calculateDiscoveryCompletion(coverSessionState);
+  const coverActiveModule = clampPhaseStep(coverSessionState.currentModule || activeModule);
+  const coverTrack = coverSessionState.challenge.track || 'persona';
 
   useEffect(() => {
     try {
@@ -244,28 +316,68 @@ export default function DiscoveryPortal({
   }, [activeModule]);
 
   useEffect(() => {
+    if (initialModule >= 1 && initialModule <= TOTAL_DISCOVERY_STEPS && viewingStartScreen && deliverableState.isDemoCase) {
+      const savedReal = readSavedRealDiscoveryState();
+      if (savedReal) {
+        const savedModule = clampPhaseStep(savedReal.currentModule || initialModule);
+        const missingPhase = firstMissingPrerequisite(savedReal, savedModule);
+        setNavigationNotice(
+          missingPhase
+            ? 'Tu sesión se reanuda en la Fase ' + String(missingPhase.num).padStart(2, '0') +
+              ' porque falta completar: ' + missingPhase.shortLabel + '.'
+            : null
+        );
+        setViewingStartScreen(false);
+        setSelectedStartTrack(savedReal.challenge.track);
+        setActiveModule(missingPhase?.num || savedModule);
+        setDeliverableState(savedReal);
+        if (onConsumeInitialModule) onConsumeInitialModule();
+        return;
+      }
+    }
+
     if (initialModule !== undefined && initialModule !== null) {
       if (initialModule === 0) {
         setViewingStartScreen(true);
         setConfirmCoverNewSession(false);
       } else if (initialModule >= 1 && initialModule <= TOTAL_DISCOVERY_STEPS) {
-        setViewingStartScreen(false);
-        setActiveModule(initialModule);
-        setDeliverableState((prev) => {
-          const prevHasData = hasMeaningfulSavedData(prev);
-          if (!prevHasData && prev.isDemoCase && initialModule === 1) {
-            const fresh = createBlankDiscoveryState(generateDiscoverySessionId('DX'), selectedStartTrack);
-            fresh.sessionStarted = true;
-            return fresh;
-          }
-          return {
-            ...prev,
-            sessionStarted: true,
-            challenge: !prevHasData
-              ? { ...prev.challenge, track: selectedStartTrack }
-              : prev.challenge
-          };
-        });
+        const isBackwardNavigation = !viewingStartScreen && initialModule <= activeModule;
+        const missingPriorPhases = isBackwardNavigation
+          ? []
+          : DISCOVERY_FIVE_PHASES.filter(
+              (phase) =>
+                phase.num < initialModule &&
+                !isDiscoveryPhasePopulated(deliverableState, phase.num)
+            );
+
+        if (missingPriorPhases.length > 0) {
+          setNavigationNotice(
+            'Para abrir la Fase ' + String(initialModule).padStart(2, '0') +
+            ', completa primero: ' + missingPriorPhases.map((phase) => phase.shortLabel).join(', ') + '.'
+          );
+        } else {
+          setNavigationNotice(null);
+          setViewingStartScreen(false);
+          setActiveModule(initialModule);
+          setDeliverableState((prev) => {
+            const prevHasData = hasMeaningfulSavedData(prev);
+            if (!prevHasData && prev.isDemoCase && initialModule === 1) {
+              const fresh = createBlankDiscoveryState(
+                generateDiscoverySessionId('DX'),
+                selectedStartTrack
+              );
+              fresh.sessionStarted = true;
+              return fresh;
+            }
+            return {
+              ...prev,
+              sessionStarted: true,
+              challenge: !prevHasData
+                ? { ...prev.challenge, track: selectedStartTrack }
+                : prev.challenge
+            };
+          });
+        }
       }
       if (onConsumeInitialModule) {
         onConsumeInitialModule();
@@ -273,13 +385,15 @@ export default function DiscoveryPortal({
     }
   }, [initialModule, onConsumeInitialModule, selectedStartTrack]);
 
-  // Persistir localmente en cada cambio bajo el sessionId actual
+  // Mantener separados el caso real y el demostrativo para que un demo no sobrescriba el borrador del cliente.
   useEffect(() => {
     try {
+      const storageKey = deliverableState.isDemoCase ? DEMO_STORAGE_KEY : STORAGE_KEY;
       localStorage.setItem(
-        STORAGE_KEY,
+        storageKey,
         JSON.stringify({ ...deliverableState, currentModule: activeModule })
       );
+      localStorage.setItem(ACTIVE_STORAGE_KEY, deliverableState.isDemoCase ? 'demo' : 'real');
     } catch {}
   }, [deliverableState, activeModule]);
 
@@ -444,7 +558,24 @@ export default function DiscoveryPortal({
   };
 
   const handleContinueSession = () => {
-    setDeliverableState((prev) => ({ ...prev, sessionStarted: true }));
+    const savedReal = deliverableState.isDemoCase ? readSavedRealDiscoveryState() : null;
+    const resumeState = savedReal || deliverableState;
+    const resumeModule = clampPhaseStep(resumeState.currentModule || activeModule || 1);
+    const missingPhase = firstMissingPrerequisite(resumeState, resumeModule);
+
+    if (savedReal) {
+      setDeliverableState(savedReal);
+      setSelectedStartTrack(savedReal.challenge.track);
+    } else {
+      setDeliverableState((prev) => ({ ...prev, sessionStarted: true }));
+    }
+    setActiveModule(missingPhase?.num || resumeModule);
+    setNavigationNotice(
+      missingPhase
+        ? 'Tu sesión se reanuda en la Fase ' + String(missingPhase.num).padStart(2, '0') +
+          ' porque falta completar: ' + missingPhase.shortLabel + '.'
+        : null
+    );
     setViewingStartScreen(false);
     setConfirmCoverNewSession(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -452,7 +583,17 @@ export default function DiscoveryPortal({
 
   const handleLoadReferenceCase = (trackOverride?: DiscoveryTrackType) => {
     const chosenTrack = trackOverride || selectedStartTrack || 'organizacion';
-    const demo = createDemoDiscoveryState(chosenTrack);
+    let demo: DiscoveryDeliverableState | null = null;
+    try {
+      const savedDemo = localStorage.getItem(DEMO_STORAGE_KEY);
+      if (savedDemo) {
+        const parsed = JSON.parse(savedDemo) as Partial<DiscoveryDeliverableState>;
+        if (parsed?.isDemoCase && parsed.challenge?.track === chosenTrack && parsed.strategicProfile) {
+          demo = hydrateDiscoveryState(parsed);
+        }
+      }
+    } catch {}
+    demo = demo || createDemoDiscoveryState(chosenTrack);
     setDeliverableState(demo);
     setSelectedStartTrack(chosenTrack);
     setActiveModule(1);
@@ -462,37 +603,25 @@ export default function DiscoveryPortal({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const isPhasePopulated = (phaseNum: number): boolean => {
-    if (phaseNum === 1) {
-      return Boolean(
-        deliverableState.challenge.expectedOutcome.trim() &&
-          (deliverableState.challenge.currentSituation.trim() ||
-            deliverableState.challenge.criticalFriction.trim())
+  const isPhasePopulated = (phaseNum: number): boolean =>
+    isDiscoveryPhasePopulated(deliverableState, phaseNum);
+
+  const requestPhaseNavigation = (phaseNum: number) => {
+    const canGoBack = phaseNum <= activeModule;
+    const missingPriorPhases = canGoBack
+      ? []
+      : DISCOVERY_FIVE_PHASES.filter(
+          (phase) => phase.num < phaseNum && !isPhasePopulated(phase.num)
+        );
+    if (missingPriorPhases.length > 0) {
+      setNavigationNotice(
+        'Para abrir la Fase ' + String(phaseNum).padStart(2, '0') +
+        ', completa primero: ' + missingPriorPhases.map((phase) => phase.shortLabel).join(', ') + '.'
       );
+      return;
     }
-    if (phaseNum === 2) {
-      return Boolean(
-        deliverableState.strategicProfile.dominantThoughtPattern.trim() ||
-          deliverableState.strategicProfile.strategicHypothesis.trim() ||
-          deliverableState.strategicProfile.realConstraints.length > 0
-      );
-    }
-    if (phaseNum === 3) {
-      const hid = deliverableState.selectedHackId;
-      if (!hid) return false;
-      const arr = deliverableState.hackPlantillaResponses[hid] || [];
-      return arr.some((v) => v && v.trim().length > 0);
-    }
-    if (phaseNum === 4) {
-      return Boolean(
-        deliverableState.srapOrientation.activar.trim() &&
-          deliverableState.srapOrientation.pausa.trim()
-      );
-    }
-    if (phaseNum === 5) {
-      return Boolean(deliverableState.sessionCompleted);
-    }
-    return false;
+    setNavigationNotice(null);
+    setActiveModule(phaseNum);
   };
 
   const completion = calculateDiscoveryCompletion(deliverableState);
@@ -502,17 +631,22 @@ export default function DiscoveryPortal({
 
   useEffect(() => {
     if (onSessionMetaChange) {
+      const showSavedRealInCover = viewingStartScreen && Boolean(savedRealSession);
       onSessionMetaChange({
-        activeModule,
+        activeModule: showSavedRealInCover ? coverActiveModule : activeModule,
         viewingStartScreen,
-        hasSavedProgress,
-        completionPct: completion.percentage
+        hasSavedProgress: viewingStartScreen ? hasCoverProgress : hasSavedProgress,
+        completionPct: showSavedRealInCover ? coverCompletion.percentage : completion.percentage
       });
     }
   }, [
     activeModule,
     viewingStartScreen,
     hasSavedProgress,
+    hasCoverProgress,
+    savedRealSession?.sessionId,
+    coverActiveModule,
+    coverCompletion.percentage,
     completion.percentage,
     onSessionMetaChange
   ]);
@@ -523,6 +657,11 @@ export default function DiscoveryPortal({
   if (viewingStartScreen) {
     return (
       <div className="max-w-6xl mx-auto py-2 sm:py-4 space-y-10 animate-fadeIn">
+        {navigationNotice && (
+          <div role="alert" className="no-print rounded-xl chalamandra-surface-rose px-4 py-3 text-xs text-rose-100">
+            {navigationNotice}
+          </div>
+        )}
         <section className="relative overflow-hidden rounded-2xl chalamandra-surface-elevated p-6 sm:p-10 lg:p-12">
           {/* Geometría simbólica de Chalamandra sobre obsidiana */}
           <AlchemicalGeometryBackdrop className="absolute -right-24 -top-24 w-[480px] h-[480px] text-[#ECC964] opacity-[0.20]" />
@@ -624,26 +763,26 @@ export default function DiscoveryPortal({
 
               {/* Aviso de progreso resguardado + Botones principales */}
               <div className="space-y-3.5 pt-2">
-                {hasSavedProgress && (
+                {hasCoverProgress && (
                   <div className="p-3.5 rounded-xl chalamandra-surface-emerald flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div className="text-[#FAF6ED]">
                       <span className="font-mono font-semibold text-emerald-300">
                         Progreso guardado disponible:
                       </span>{' '}
                       <span>
-                        {deliverableState.challenge.title.trim() ||
-                          `Recorrido ${activeTrack === 'organizacion' ? 'Organizaciones' : 'Personas'}`}{' '}
-                        · Fase 0{activeModule} ({completion.percentage}% completado)
+                        {coverSessionState.challenge.title.trim() ||
+                          `Recorrido ${coverTrack === 'organizacion' ? 'Organizaciones' : 'Personas'}`}{' '}
+                        · Fase 0{coverActiveModule} ({coverCompletion.percentage}% completado)
                       </span>
                     </div>
                     <span className="font-mono text-[11px] text-emerald-200/90 tabular-nums">
-                      {deliverableState.sessionId}
+                      {coverSessionState.sessionId}
                     </span>
                   </div>
                 )}
 
                 <div className="flex flex-wrap items-center gap-3">
-                  {hasSavedProgress ? (
+                  {hasCoverProgress ? (
                     <>
                       <button
                         id="start-continue-session-btn"
@@ -653,7 +792,9 @@ export default function DiscoveryPortal({
                       >
                         <Play className="w-4 h-4 fill-[#08070B] shrink-0" />
                         <span className="tabular-nums">
-                          Continuar sesión (Fase 0{activeModule} · {completion.percentage}%)
+                          {hasSavedRealProgress
+                            ? 'Volver a mi sesión real (Fase 0' + coverActiveModule + ' · ' + coverCompletion.percentage + '%)'
+                            : 'Continuar sesión (Fase 0' + activeModule + ' · ' + completion.percentage + '%)'}
                         </span>
                         <ArrowRight className="w-4 h-4 shrink-0" />
                       </button>
@@ -671,7 +812,9 @@ export default function DiscoveryPortal({
                       ) : (
                         <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl chalamandra-surface-rose text-xs">
                           <span className="text-rose-100 font-medium px-1">
-                            ¿Abrir Fase 01 en blanco y reemplazar el borrador actual?
+                            {hasSavedRealProgress
+                              ? '¿Abrir Fase 01 en blanco y reemplazar el borrador real guardado?'
+                              : '¿Abrir Fase 01 en blanco y reemplazar el borrador actual?'}
                           </span>
                           <button
                             type="button"
@@ -1025,7 +1168,10 @@ export default function DiscoveryPortal({
                   type="button"
                   role="tab"
                   aria-selected={isCurrent}
-                  onClick={() => setActiveModule(phase.num)}
+                  onClick={() => requestPhaseNavigation(phase.num)}
+                  aria-disabled={phase.num > activeModule && !DISCOVERY_FIVE_PHASES.filter(
+                    (priorPhase) => priorPhase.num < phase.num
+                  ).every((priorPhase) => isPhasePopulated(priorPhase.num))}
                   className={`flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl text-xs cursor-pointer text-left ${
                     isCurrent
                       ? 'chalamandra-btn-primary font-bold'
@@ -1055,6 +1201,12 @@ export default function DiscoveryPortal({
           </div>
         </div>
       </section>
+
+      {navigationNotice && (
+        <div role="alert" className="no-print rounded-xl chalamandra-surface-rose px-4 py-3 text-xs text-rose-100">
+          {navigationNotice}
+        </div>
+      )}
 
       {/* Fase Activa */}
       <div className="min-h-[520px]">
