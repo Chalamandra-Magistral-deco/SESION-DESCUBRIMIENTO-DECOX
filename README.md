@@ -54,6 +54,22 @@ Cuando se modifique el catálogo en INTERACTIVE-DECOX, revisar y sincronizar la 
 
 Antes de ofrecer almacenamiento de historial, acceso exclusivo de pago o uso multiusuario, implementar persistencia de datos y controles de acceso con pruebas de aislamiento.
 
+## Despliegue en contenedor (Cloud Run)
+
+El repositorio incluye un `Dockerfile` multi-stage para construir la interfaz y ejecutar Express en producción. El servidor escucha `process.env.PORT` (Cloud Run inyecta ese puerto) y expone `/healthz` para comprobaciones de salud.
+
+Validación local antes de desplegar:
+
+```bash
+bun install --frozen-lockfile
+bun run lint
+INTERACTIVE_DECOX_PATH=/ruta/a/INTERACTIVE-DECOX bun run catalog:check
+bun run build
+PORT=8080 NODE_ENV=production bun run start
+```
+
+**Bloqueos conocidos antes de producción:** el proyecto Google Cloud de destino debe tener facturación habilitada y Cloud Run configurado. Además, `/api/discovery/save` y `/api/discovery/load` aún usan memoria volátil; el identificador de sesión no autentica al usuario. No usar este despliegue como entrega pagada multiusuario hasta implementar y probar persistencia duradera y autorización de acceso.
+
 ## Desarrollo y validación
 
 Requisitos: Node.js 20+ y Bun (el lockfile del repositorio es bun.lock).

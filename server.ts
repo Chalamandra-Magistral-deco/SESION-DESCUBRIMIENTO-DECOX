@@ -70,9 +70,11 @@ function normalizeValidSessionId(candidate: unknown): string | null {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number.parseInt(process.env.PORT || '3000', 10);
 
   app.use(express.json({ limit: '2mb' }));
+
+  app.get('/healthz', (_req, res) => res.status(200).json({ status: 'ok' }));
 
   // AI Strategic Image Studio Generation
   app.post('/api/image-studio/generate', async (req, res) => {
