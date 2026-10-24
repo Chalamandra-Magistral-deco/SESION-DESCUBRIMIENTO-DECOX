@@ -1,0 +1,6 @@
+{
+  "name": "Decox Magistral - Plataforma Interactiva SRAP",
+  "description": "Aplicación web interactiva de la Sesión de Descubrimiento de Chalamandra Magistral DecoX para explorar tu situación, definir objetivos, distinguir hechos de hipótesis y trazar una ruta inicial de acción.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
