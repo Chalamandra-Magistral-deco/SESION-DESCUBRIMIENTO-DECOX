@@ -3,6 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
+import { buildLocalPowerLensDirective } from './src/data/interactiveCatalog.js';
+import { PowerLensDomain } from './src/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -152,30 +154,7 @@ Categoría de consulta: ${category || 'General'}.`;
         return res.json({ success: true, data: parsed });
       }
 
-      const wisdomPresets: Record<string, any> = {
-        'Desbloqueo Emocional': {
-          mantra: 'LA EMOCIÓN ES SEÑAL DE RADAR, NO SENTENCIA DE ACCIÓN.',
-          diagnostico: `Sobre "${prompt}": estás mezclando la carga subjetiva del momento con los hechos observables. Separar la tensión fisiológica del dato real reduce de inmediato la parálisis.`,
-          protocolo24h: [
-            'Escribe en dos columnas separadas qué ocurrió objetivamente y qué estás suponiendo.',
-            'Realiza 3 ciclos de respiración métrica SRAP (4-4-4-4) antes de decidir.',
-            'Ejecuta una acción mínima verificable hoy antes de las 18:00 hrs.'
-          ],
-          preguntaReflexion: '¿Qué parte de este freno es un hecho medible y qué parte es anticipación no verificada?'
-        },
-        'Estrategia Empresarial': {
-          mantra: 'SIMPLICIDAD DE CRITERIOS VENCE A COMPLEJIDAD ANSIOSA.',
-          diagnostico: `Sobre "${prompt}": existe dispersión entre frentes que compiten por la misma atención. Definir un único indicador prioritario ordena qué conservar y qué descartar.`,
-          protocolo24h: [
-            'Aísla la única métrica verificable que define avance real esta semana.',
-            'Pausa o delega 2 tareas operativas secundarias.',
-            'Ejecuta hoy el contacto o prueba directa de mayor impacto.'
-          ],
-          preguntaReflexion: '¿Qué dejarías de hacer hoy mismo si solo pudieras medir tu semana por un resultado concreto?'
-        }
-      };
-
-      const defaultData = wisdomPresets[category || ''] || {
+      const defaultData = {
         mantra: 'SEPARA EL HECHO DEL SUPUESTO Y PRUEBA EN CORTO.',
         diagnostico: `Para "${prompt}", el bloqueo proviene de exigir certeza completa antes de dar el primer paso verificable.`,
         protocolo24h: [
@@ -183,7 +162,8 @@ Categoría de consulta: ${category || 'General'}.`;
           'Inicia un bloque de 25 minutos con Metrónomo SRAP a 60 BPM.',
           'Define un criterio frío de validación para las próximas 24 horas.'
         ],
-        preguntaReflexion: '¿Qué dato real obtendrías hoy si ejecutas una prueba pequeña en lugar de seguir postergando?'
+        preguntaReflexion:
+          '¿Qué dato real obtendrías hoy si ejecutas una prueba pequeña en lugar de seguir postergando?'
       };
 
       return res.json({ success: true, data: defaultData });
@@ -193,6 +173,80 @@ Categoría de consulta: ${category || 'General'}.`;
         success: false,
         code: classified.code,
         error: classified.userMessage
+      });
+    }
+  });
+
+  // Generador de Lentes de Poder (reutilizando operación "hook" de INTERACTIVE-DECOX + fallback determinista local)
+  app.post('/api/discovery/power-lens', async (req, res) => {
+    const {
+      poderTitle = 'Poder de la Palabra',
+      domain = 'Negocios',
+      caseTitle = '',
+      criticalFriction = '',
+      expectedOutcome = ''
+    } = req.body || {};
+
+    const safeDomain = (domain || 'Negocios') as PowerLensDomain;
+    const localFallback = buildLocalPowerLensDirective({
+      poderTitle,
+      domain: safeDomain,
+      caseTitle,
+      criticalFriction,
+      expectedOutcome
+    });
+
+    const ai = getGenAIClient();
+    if (!ai) {
+      return res.json({
+        success: true,
+        source: 'local',
+        directive: localFallback,
+        engineNotice:
+          'Motor externo sin credencial activa; Lente de Poder generado por el motor determinista local sobre tu caso.'
+      });
+    }
+
+    try {
+      const caseContext = [
+        caseTitle ? `Caso: ${caseTitle}` : '',
+        criticalFriction ? `Fricción: ${criticalFriction}` : '',
+        expectedOutcome ? `Cambio deseado: ${expectedOutcome}` : ''
+      ]
+        .filter(Boolean)
+        .join('. ');
+
+      const prompt = `Genera un "Lente de Poder" para el "${poderTitle}" aplicado al dominio de "${safeDomain}".${
+        caseContext ? ` Contexto real del participante: ${caseContext}.` : ''
+      } El resultado debe ser una directiva concisa o una pregunta disruptiva en máximo 2 líneas, sobria, sin promesas exageradas. Formato: "**[Nombre del Lente]:** [Directiva/Pregunta]".`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: prompt
+      });
+
+      const text = (response.text || '').trim();
+      if (!text) {
+        return res.json({
+          success: true,
+          source: 'local',
+          directive: localFallback
+        });
+      }
+
+      return res.json({
+        success: true,
+        source: 'ai',
+        directive: text
+      });
+    } catch (err: any) {
+      const classified = classifyUpstreamError(err);
+      return res.json({
+        success: true,
+        source: 'local',
+        directive: localFallback,
+        code: classified.code,
+        engineNotice: classified.userMessage
       });
     }
   });
@@ -278,20 +332,28 @@ Categoría de consulta: ${category || 'General'}.`;
     }
   });
 
-  // Canonical Discovery Session Processing Endpoint (Facts / Interpretations / Uncertainties + Synthesis)
+  // Procesamiento de la Sesión de Descubrimiento (5 fases: Explorar, Decodificar, Aplicar 1 Hack, Orientar con SRAP, Ruta Inicial)
   app.post('/api/discovery/process-session', async (req, res) => {
     try {
-      const { challenge, strategicProfile, selectedHacks, hackNotes, experiments } = req.body;
+      const {
+        challenge,
+        strategicProfile,
+        selectedHack,
+        powerLens,
+        srapOrientation
+      } = req.body || {};
 
       if (
         !challenge ||
         (!challenge.title?.trim() &&
           !challenge.currentSituation?.trim() &&
-          !challenge.criticalFriction?.trim())
+          !challenge.criticalFriction?.trim() &&
+          !challenge.expectedOutcome?.trim())
       ) {
         return res.status(400).json({
           success: false,
-          error: 'Completa al menos la descripción de tu situación o fricción en el Paso 01 antes de procesar.'
+          error:
+            'Completa al menos el objetivo o la fricción actual en la Fase 1 (Explorar) antes de procesar.'
         });
       }
 
@@ -300,30 +362,25 @@ Categoría de consulta: ${category || 'General'}.`;
         return res.status(503).json({
           success: false,
           code: 'AI_KEY_UNAVAILABLE',
-          error: 'El motor de IA en servidor no tiene clave activa en este momento. Puedes generar de inmediato tu síntesis personalizada con el procesador analítico local basado en tus respuestas.'
+          error:
+            'El motor de IA en servidor no tiene clave activa en este momento. Tu Ruta Inicial está generada con el Motor Analítico Local basado directamente en tus respuestas.'
         });
       }
 
       const trackLabel = challenge.track === 'organizacion' ? 'Organizaciones' : 'Personas';
-      const systemInstruction = `Eres el motor metodológico de CHALAMANDRA MAGISTRAL · INTERACTIVE DECOX para la Sesión de Descubrimiento (Recorrido: ${trackLabel}).
-Analiza rigurosamente las respuestas reales del usuario integrando los 7 hacks originales de Chalamandra (01. Scheherazade, 02. Hermes, 03. Carroll, 04. Hacker, 05. Trickster, 06. Inteligencia basada en datos y correlaciones, 07. El niño de 8 años) en tres fases (Mundo Simulado, Decodificación del sistema y Mundo Real).
-REGLAS ESTRICTAS EPISTÉMICAS Y ÉTICAS:
-1. Deriva cada punto exclusivamente de la información proporcionada; no inventes métricas ni hagas promesas infundadas.
-2. Separa con rigor:
-   - "facts": hechos observables y restricciones reales declaradas.
-   - "hypotheses" (y "interpretations" equivalente): hipótesis medibles, lecturas del sistema y correlaciones a verificar. NUNCA presentes una correlación como causalidad probada.
-   - "imaginedPossibilities": posibilidades imaginadas, narrativas alternativas o futuros pre-lógicos generados en el Mundo Simulado.
-   - "uncertainties": incógnitas abiertas y datos aún no observados.
-3. REGLA ÉTICA OBLIGATORIA: "Hackear el sistema" (04. Hacker) significa encontrar ventajas legítimas y transparentes dentro de las reglas existentes, nunca engañar personas ni usar prácticas ilegales.
-4. En Fase C (Mundo Real), contrasta alternativas en "realWorldOptions" frente a recursos, riesgos y resultado esperado, y construye "liveSessionBrief" para preparar la sesión en vivo y definir un siguiente paso defendible en 24-72h.`;
+      const systemInstruction = `Eres el motor metodológico de CHALAMANDRA MAGISTRAL · INTERACTIVE DECOX para la Sesión de Descubrimiento de 5 fases (Recorrido: ${trackLabel}).
+REGLAS ESTRICTAS:
+1. Fundamenta cada salida exclusivamente en las respuestas reales del usuario (Fase 1 Explorar, Fase 2 Decodificar, Fase 3 Hack único + plantillaMetodologica + Lente de Poder opcional, Fase 4 Orientación SRAP).
+2. Si existe un arquetipo en strategicProfile.archetypeHypothesis, trátalo SIEMPRE como hipótesis de trabajo revisable, nunca como diagnóstico definitivo ni etiqueta fija.
+3. No inventes métricas ni hagas promesas grandilocuentes; mantén lenguaje sobrio, ejecutivo y verificable.`;
 
       const userPayload = JSON.stringify(
         {
           challenge,
           strategicProfile,
-          selectedHacks,
-          hackNotes,
-          experiments
+          selectedHack,
+          powerLens,
+          srapOrientation
         },
         null,
         2
@@ -331,7 +388,7 @@ REGLAS ESTRICTAS EPISTÉMICAS Y ÉTICAS:
 
       const response = await ai.models.generateContent({
         model: 'gemini-3.8-flash',
-        contents: `Respuestas registradas en la Sesión de Descubrimiento:\n${userPayload}`,
+        contents: `Respuestas registradas en las 5 fases de la Sesión de Descubrimiento:\n${userPayload}`,
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -354,10 +411,6 @@ REGLAS ESTRICTAS EPISTÉMICAS Y ÉTICAS:
                 type: Type.ARRAY,
                 items: { type: Type.STRING }
               },
-              interpretations: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              },
               imaginedPossibilities: {
                 type: Type.ARRAY,
                 items: { type: Type.STRING }
@@ -373,48 +426,6 @@ REGLAS ESTRICTAS EPISTÉMICAS Y ÉTICAS:
               nextSteps: {
                 type: Type.ARRAY,
                 items: { type: Type.STRING }
-              },
-              realWorldOptions: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    optionTitle: { type: Type.STRING },
-                    originPhase: { type: Type.STRING },
-                    resourcesRequired: { type: Type.STRING },
-                    keyRisk: { type: Type.STRING },
-                    expectedOutcome: { type: Type.STRING },
-                    recommended: { type: Type.BOOLEAN }
-                  },
-                  required: [
-                    'optionTitle',
-                    'originPhase',
-                    'resourcesRequired',
-                    'keyRisk',
-                    'expectedOutcome'
-                  ]
-                }
-              },
-              liveSessionBrief: {
-                type: Type.OBJECT,
-                properties: {
-                  criticalNode: { type: Type.STRING },
-                  defensibleNextStep: { type: Type.STRING },
-                  questionsForLiveSession: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                  },
-                  preparationChecklist: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                  }
-                },
-                required: [
-                  'criticalNode',
-                  'defensibleNextStep',
-                  'questionsForLiveSession',
-                  'preparationChecklist'
-                ]
               }
             },
             required: [
@@ -425,13 +436,10 @@ REGLAS ESTRICTAS EPISTÉMICAS Y ÉTICAS:
               'nonNegotiables',
               'facts',
               'hypotheses',
-              'interpretations',
               'imaginedPossibilities',
               'uncertainties',
               'criticalPoints',
-              'nextSteps',
-              'realWorldOptions',
-              'liveSessionBrief'
+              'nextSteps'
             ]
           }
         }
@@ -458,56 +466,6 @@ REGLAS ESTRICTAS EPISTÉMICAS Y ÉTICAS:
     }
   });
 
-  // Backwards-compatible alias
-  app.post('/api/discovery/synthesize-map', async (req, res) => {
-    try {
-      const ai = getGenAIClient();
-      if (!ai) {
-        return res.status(503).json({
-          success: false,
-          code: 'AI_KEY_UNAVAILABLE',
-          error: 'Motor IA no disponible; utiliza el procesador analítico local.'
-        });
-      }
-      const { challenge, strategicProfile, selectedHacks, experiments } = req.body;
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: JSON.stringify({ challenge, strategicProfile, selectedHacks, experiments }),
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              summaryChallenge: { type: Type.STRING },
-              keyInsight: { type: Type.STRING },
-              tacticalMantra: { type: Type.STRING },
-              defensiveMoat: { type: Type.STRING },
-              nonNegotiables: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              }
-            },
-            required: [
-              'summaryChallenge',
-              'keyInsight',
-              'tacticalMantra',
-              'defensiveMoat',
-              'nonNegotiables'
-            ]
-          }
-        }
-      });
-      return res.json({ success: true, data: JSON.parse(response.text || '{}') });
-    } catch (err: any) {
-      const classified = classifyUpstreamError(err);
-      return res.status(502).json({
-        success: false,
-        code: classified.code,
-        error: classified.userMessage
-      });
-    }
-  });
-
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -515,7 +473,7 @@ REGLAS ESTRICTAS EPISTÉMICAS Y ÉTICAS:
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(__dirname, 'dist');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

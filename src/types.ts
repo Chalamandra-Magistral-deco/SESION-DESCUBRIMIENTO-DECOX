@@ -12,9 +12,76 @@ export type ActiveView =
   | 'matrix-3d'
   | 'image-studio';
 
+// Catálogo real de Interactive DecoX: exactamente tres arquetipos
+export type InteractiveArchetype = 'El Arquitecto' | 'El Alquimista' | 'El Explorador';
+
+export type ArchetypeSourceType = 'none' | 'manual' | 'quiz';
+
+export interface PlantillaAspecto {
+  aspecto: string;
+  guia: string;
+}
+
+export interface AmplificacionProfunda {
+  datoOculto: string;
+  miAmplificacion: string;
+  ejercicios: {
+    titulo: string;
+    descripcion: string;
+  }[];
+}
+
+export interface PoderDeSherezade {
+  id: number;
+  title: string;
+  icon: string;
+  clave: string;
+  proposito: string;
+  poder: string;
+  ejemploDeUso: string;
+  plantilla: PlantillaAspecto[];
+  miniReto: string;
+}
+
+export interface InteractiveHack {
+  id: number;
+  title: string;
+  subtitle: string;
+  description: string;
+  metodo: string;
+  archetype: InteractiveArchetype;
+  archetypeIcon: string;
+  amplificacion: string;
+  ejercicio: string;
+  colorClass: string;
+  icon: string;
+  amplificacionProfunda: AmplificacionProfunda;
+  poderDeSherezadeId?: number;
+  miniReto: string;
+  plantillaMetodologica: PlantillaAspecto[];
+}
+
+export interface InteractiveQuizOption {
+  text: string;
+  archetype: InteractiveArchetype;
+}
+
+export interface InteractiveQuizQuestion {
+  id: number;
+  text: string;
+  options: InteractiveQuizOption[];
+}
+
+export type PowerLensDomain =
+  | 'Negocios'
+  | 'Relaciones'
+  | 'Salud'
+  | 'Finanzas'
+  | 'Creatividad';
+
 export interface Archetype {
-  id: string;
-  name: string;
+  id: InteractiveArchetype;
+  name: InteractiveArchetype;
   tagline: string;
   description: string;
   strengths: string[];
@@ -29,7 +96,7 @@ export interface ArchetypeQuestion {
   question: string;
   options: {
     label: string;
-    archetypeId: string;
+    archetypeId: InteractiveArchetype;
     points: number;
   }[];
 }
@@ -78,7 +145,7 @@ export interface RPGItem {
 }
 
 // ==========================================
-// CANONICAL DISCOVERY SESSION SUITE TYPES
+// SESIÓN DE DESCUBRIMIENTO DECOX (5 FASES)
 // ==========================================
 
 export type DiscoveryTrackType = 'persona' | 'organizacion';
@@ -116,6 +183,7 @@ export type UrgencyLevelType =
 
 export interface ChallengeData {
   track?: DiscoveryTrackType;
+  domain?: PowerLensDomain;
   clientName: string;
   companyOrRole: string;
   explorationFocus?: ExplorationFocusType;
@@ -127,6 +195,8 @@ export interface ChallengeData {
     | 'Disrupción e Innovación';
   currentSituation: string;
   criticalFriction: string;
+  previousAttempts?: string;
+  constraintsSummary?: string;
   expectedOutcome: string;
   primaryMetric: string;
   timeframe: string;
@@ -135,6 +205,9 @@ export interface ChallengeData {
 }
 
 export interface StrategicProfileData {
+  archetypeHypothesis?: InteractiveArchetype | null;
+  archetypeSource?: ArchetypeSourceType;
+  archetypeHypothesisNotes?: string;
   evidenceLevel?: EvidenceLevelType;
   dependencyScope?: DependencyScopeType;
   urgencyLevel?: UrgencyLevelType;
@@ -146,6 +219,27 @@ export interface StrategicProfileData {
   hiddenIncentives: string;
   strategicHypothesis: string;
   conditionalProfileAnswers?: Record<string, string>;
+}
+
+export interface PowerLensApplicationState {
+  used: boolean;
+  poderId: number;
+  poderTitle: string;
+  domain: PowerLensDomain;
+  directive: string;
+  source: 'ai' | 'local' | 'manual';
+  generatedAt?: string;
+}
+
+export interface SrapOrientationState {
+  sincronizar: string;
+  reconocer: string;
+  activar: string;
+  pausa: string;
+  immediateStep24h: string;
+  nextStepAfterPause: string;
+  metronomeUsedBpm?: number;
+  isCustomized?: boolean;
 }
 
 export interface MagistralHackItem {
@@ -206,6 +300,7 @@ export interface RealWorldOptionComparison {
 export interface LiveSessionBrief {
   criticalNode: string;
   defensibleNextStep: string;
+  pauseCriterion?: string;
   questionsForLiveSession: string[];
   preparationChecklist: string[];
 }
@@ -224,6 +319,7 @@ export interface StrategicMapData {
   uncertainties?: string[];
   criticalPoints?: string[];
   nextSteps?: string[];
+  pauseCriteria?: string[];
   hackDeliverables?: HackDeliverableSummary[];
   realWorldOptions?: RealWorldOptionComparison[];
   liveSessionBrief?: LiveSessionBrief;
@@ -254,9 +350,15 @@ export interface DiscoveryDeliverableState {
   sessionStarted?: boolean;
   sessionCompleted?: boolean;
   planNeedsSync?: boolean;
-  currentModule: number; // 1 to 7
+  srapNeedsSync?: boolean;
+  currentModule: number; // 1 to 5 (Explorar, Decodificar, Aplicar un Hack, Orientar con SRAP, Cerrar con Ruta Inicial)
   challenge: ChallengeData;
   strategicProfile: StrategicProfileData;
+  selectedHackId: number | null;
+  hackPlantillaResponses: Record<number, string[]>;
+  powerLens: PowerLensApplicationState;
+  srapOrientation: SrapOrientationState;
+  // Backwards-compatible fields preserved for custom tasks & JSON exports
   selectedHackIds: number[];
   hackNotes: Record<number, string>;
   experiments: LabExperimentItem[];
@@ -264,4 +366,3 @@ export interface DiscoveryDeliverableState {
   actionPlan: ActionPlanWeek[];
   lastSavedTimestamp: string;
 }
-

@@ -4,26 +4,40 @@ import {
   Cloud,
   ArrowLeft,
   ShieldCheck,
-  Award,
   FileText,
   Download,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw,
+  Cpu
 } from 'lucide-react';
-import { DiscoveryDeliverableState } from '../../types';
-import { SEVEN_MAGISTRAL_HACKS } from '../../utils/constants';
-import { DISCOVERY_SYNTHESIS_STEP } from '../../data/discoveryFlowConfig';
+import {
+  DiscoveryDeliverableState,
+  StrategicMapData,
+  ActionPlanWeek
+} from '../../types';
+import {
+  HACKS_DATA,
+  getPoderForHack,
+  INTERACTIVE_ARCHETYPES
+} from '../../data/interactiveCatalog';
+import { recommendSingleHackForCase } from '../../data/discoveryFlowConfig';
 import {
   deriveSynthesisFromResponses,
-  mergeActionPlanPreservingCustomTasks
+  deriveSrapFromCase,
+  formatHackPlantillaSummary,
+  mergeActionPlanPreservingCustomTasks,
+  sanitizeActivePayloadForProcessing
 } from '../../utils/discoverySynthesisEngine';
 import { useAudio } from '../../hooks/useAudio';
 import { triggerConfetti } from '../Confetti';
+import { ChalamandraMedallion, AlchemicalGeometryBackdrop } from '../ChalamandraSeal';
 
 interface Module07ExecutiveReportProps {
   state: DiscoveryDeliverableState;
   onSaveServer: () => Promise<boolean>;
   onMarkCompleted: () => void;
+  onApplySynthesis: (updatedMap: StrategicMapData, updatedPlan: ActionPlanWeek[]) => void;
   onPrev: () => void;
   onJumpToModule: (moduleNum: number) => void;
 }
@@ -32,19 +46,41 @@ export default function Module07ExecutiveReport({
   state,
   onSaveServer,
   onMarkCompleted,
+  onApplySynthesis,
   onPrev,
   onJumpToModule
 }: Module07ExecutiveReportProps) {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [aiProcessing, setAiProcessing] = useState(false);
+  const [engineNotice, setEngineNotice] = useState<string | null>(null);
 
   const { playSuccessChime } = useAudio();
+
+  const recommendation = recommendSingleHackForCase(state.challenge, state.strategicProfile);
+  const chosenHack =
+    (state.selectedHackId ? HACKS_DATA.find((h) => h.id === state.selectedHackId) : null) ||
+    recommendation.recommendedHack;
+  const linkedPower = getPoderForHack(chosenHack);
+  const plantillaPairs = formatHackPlantillaSummary(
+    chosenHack.id,
+    state.hackPlantillaResponses
+  );
 
   const derivedBundle = deriveSynthesisFromResponses(state);
   const effectiveMap = state.strategicMap.isSynthesized
     ? state.strategicMap
     : derivedBundle.strategicMap;
+
+  const effectiveSrap =
+    state.srapOrientation?.sincronizar?.trim() &&
+    state.srapOrientation?.reconocer?.trim() &&
+    state.srapOrientation?.activar?.trim() &&
+    state.srapOrientation?.pausa?.trim() &&
+    !state.srapNeedsSync
+      ? state.srapOrientation
+      : deriveSrapFromCase(state);
 
   const isPlanEmpty = state.actionPlan.every((w) => w.tasks.length === 0);
   const effectiveActionPlan =
@@ -52,9 +88,75 @@ export default function Module07ExecutiveReport({
       ? mergeActionPlanPreservingCustomTasks(derivedBundle.recommendedPlan, state.actionPlan)
       : state.actionPlan;
 
-  const prioritizedHacks = SEVEN_MAGISTRAL_HACKS.filter((h) =>
-    state.selectedHackIds.includes(h.id)
-  );
+  const archetypeHyp = state.strategicProfile.archetypeHypothesis || null;
+  const archetypeDetails = archetypeHyp ? INTERACTIVE_ARCHETYPES[archetypeHyp] : null;
+
+  const handleRefreshLocalSynthesis = () => {
+    const fresh = deriveSynthesisFromResponses(state);
+    const mergedPlan = mergeActionPlanPreservingCustomTasks(
+      fresh.recommendedPlan,
+      state.actionPlan
+    );
+    onApplySynthesis(fresh.strategicMap, mergedPlan);
+    setEngineNotice(
+      'Ruta inicial actualizada mediante el Motor Analítico Local determinista sobre tus respuestas actuales.'
+    );
+  };
+
+  const handleProcessWithExternalAI = async () => {
+    setAiProcessing(true);
+    setEngineNotice(null);
+    try {
+      const payload = sanitizeActivePayloadForProcessing(state);
+      const res = await fetch('/api/discovery/process-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+
+      if (res.ok && json.success && json.data) {
+        const aiMap: StrategicMapData = {
+          ...derivedBundle.strategicMap,
+          ...json.data,
+          synthesisSource: 'ai',
+          isSynthesized: true,
+          generatedAt: new Date().toLocaleDateString('es-ES', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric'
+          })
+        };
+        const mergedPlan = mergeActionPlanPreservingCustomTasks(
+          derivedBundle.recommendedPlan,
+          state.actionPlan
+        );
+        onApplySynthesis(aiMap, mergedPlan);
+        setEngineNotice('Síntesis complementada con el motor externo de IA.');
+      } else {
+        const mergedPlan = mergeActionPlanPreservingCustomTasks(
+          derivedBundle.recommendedPlan,
+          state.actionPlan
+        );
+        onApplySynthesis(derivedBundle.strategicMap, mergedPlan);
+        setEngineNotice(
+          json?.error ||
+            'El motor externo no está disponible en este momento; se mantiene activa la síntesis del Motor Analítico Local.'
+        );
+      }
+    } catch {
+      const mergedPlan = mergeActionPlanPreservingCustomTasks(
+        derivedBundle.recommendedPlan,
+        state.actionPlan
+      );
+      onApplySynthesis(derivedBundle.strategicMap, mergedPlan);
+      setEngineNotice(
+        'No hubo conexión con el motor externo; tu Ruta Inicial permanece generada con el Motor Analítico Local.'
+      );
+    } finally {
+      setAiProcessing(false);
+    }
+  };
 
   const handlePrint = () => {
     window.print();
@@ -66,7 +168,9 @@ export default function Module07ExecutiveReport({
     try {
       const ok = await onSaveServer();
       if (!ok) {
-        throw new Error('No se pudo sincronizar con el servidor; tus datos permanecen guardados localmente.');
+        throw new Error(
+          'No se pudo sincronizar con la memoria temporal del servidor; tus datos siguen guardados en este navegador.'
+        );
       }
       onMarkCompleted();
       setSaveSuccess(true);
@@ -83,9 +187,12 @@ export default function Module07ExecutiveReport({
   const handleDownloadJson = () => {
     const exportPayload: DiscoveryDeliverableState = {
       ...state,
+      selectedHackId: chosenHack.id,
+      srapOrientation: effectiveSrap,
       strategicMap: effectiveMap,
       actionPlan: effectiveActionPlan,
-      planNeedsSync: false
+      planNeedsSync: false,
+      srapNeedsSync: false
     };
     const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
       type: 'application/json'
@@ -93,92 +200,132 @@ export default function Module07ExecutiveReport({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `sesion-descubrimiento-decox-${state.sessionId || Date.now()}.json`;
+    link.download = `ruta-inicial-decox-${state.sessionId || Date.now()}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
+  const uncertaintiesList =
+    effectiveMap.uncertainties && effectiveMap.uncertainties.length > 0
+      ? effectiveMap.uncertainties
+      : derivedBundle.strategicMap.uncertainties || [];
+
   return (
     <div className="space-y-8 animate-fadeIn">
-      {/* Completion & Action Bar (Hidden in Print) */}
-      <div className="no-print border-b border-slate-800 pb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-emerald-400 text-xs font-mono mb-2 tabular-nums">
-            <FileText className="w-3.5 h-3.5" />
-            <span>Paso 13 de 13 · Fase C · Mundo Real: Entrega Ejecutiva</span>
+      {/* Barra de Cierre y Acciones (Oculta en Impresión A4) */}
+      <div className="no-print border-b border-[#D4AF37]/35 pb-6 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-[#ECC964] text-xs font-mono font-semibold tabular-nums">
+            <FileText className="w-4 h-4 text-[#ECC964]" />
+            <span>Fase 05 de 05 · Cerrar con una Ruta Inicial</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-100">
-            Informe Ejecutivo de Sesión de Descubrimiento
+          <h2 className="font-display text-2xl sm:text-3xl font-semibold text-[#FAF6ED] tracking-tight text-balance">
+            Ruta Inicial e Informe Ejecutivo Personalizado
           </h2>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl">
-            Documento consolidado a partir de tus respuestas. Puedes sincronizarlo, exportar respaldo estructurado o imprimirlo como PDF oficial.
+          <p className="text-xs sm:text-sm text-[#D6CFC2] max-w-2xl leading-relaxed">
+            Síntesis breve, fundamentada y accionable con tu problema prioritario, tu hipótesis de trabajo, la aplicación real de <strong className="text-[#FFF0BE]">{chosenHack.title}</strong>, tu orientación SRAP y exportación directa a PDF/A4 o JSON.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           <button
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer whitespace-nowrap ${
               saveSuccess
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700'
+                ? 'chalamandra-selector-emerald text-emerald-200'
+                : 'chalamandra-btn-secondary'
             }`}
           >
-            <Cloud className="w-4 h-4 text-cyan-400" />
+            <Cloud className="w-4 h-4 text-[#ECC964] shrink-0" />
             <span>
               {saving
-                ? 'Sincronizando...'
+                ? 'Guardando...'
                 : saveSuccess
-                ? 'Sesión Sellada y Sincronizada'
-                : 'Sellar y Guardar Sesión'}
+                ? 'Sesión sellada'
+                : 'Sellar sesión'}
             </span>
           </button>
 
           <button
             type="button"
             onClick={handleDownloadJson}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-xs font-bold transition-all cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl chalamandra-btn-secondary text-xs font-bold cursor-pointer whitespace-nowrap"
           >
-            <Download className="w-4 h-4 text-slate-300" />
-            <span>Respaldo JSON</span>
+            <Download className="w-4 h-4 text-[#ECC964] shrink-0" />
+            <span>Exportar JSON</span>
           </button>
 
           <button
             type="button"
             onClick={handlePrint}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-extrabold text-xs shadow-lg shadow-amber-950/40 transition-all hover:scale-[1.02] cursor-pointer"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl chalamandra-btn-primary font-bold text-xs cursor-pointer whitespace-nowrap"
           >
-            <Printer className="w-4 h-4" />
-            <span>Descargar / Imprimir PDF</span>
+            <Printer className="w-4 h-4 shrink-0" />
+            <span>Imprimir / Guardar PDF (A4)</span>
           </button>
         </div>
       </div>
 
-      {/* Persistence & Session Scope Notice (Hidden in Print) */}
-      <div className="no-print p-4 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <strong className="text-slate-200 font-mono">Persistencia actual ({state.sessionId}):</strong>{' '}
-          Tu sesión se conserva automáticamente en este navegador (<code className="text-amber-300">localStorage</code>) al recargar la página, pero no sincroniza automáticamente entre dispositivos distintos. El guardado en servidor utiliza memoria temporal volátil; para conservar una copia permanente fuera de este navegador, descarga el <strong className="text-slate-200">Respaldo JSON</strong> o el <strong className="text-slate-200">Informe PDF</strong>.
+      {/* Estado transparente del Motor de Síntesis y Persistencia (Oculto en impresión) */}
+      <div className="no-print p-5 rounded-2xl chalamandra-surface space-y-3 text-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1 text-[#DDD6C7]">
+            <div className="font-mono text-[#FFF0BE] font-semibold">
+              Motor activo:{' '}
+              {effectiveMap.synthesisSource === 'ai'
+                ? 'Motor de IA externo'
+                : 'Motor Analítico Local (determinista sobre tus respuestas)'}
+            </div>
+            <p className="text-[#C4BCAD] leading-relaxed">
+              Persistencia (<span className="font-mono text-[#FAF6ED]">{state.sessionId}</span>): tu avance se recupera en este navegador (<code className="text-[#ECC964] font-mono">localStorage</code>), sin sincronización automática entre dispositivos distintos ni autenticación entre clientes. El respaldo en servidor usa memoria temporal volátil.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleRefreshLocalSynthesis}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl chalamandra-btn-secondary font-semibold cursor-pointer whitespace-nowrap"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-[#ECC964] shrink-0" />
+              <span>Recalcular con motor local</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={aiProcessing}
+              onClick={handleProcessWithExternalAI}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl chalamandra-btn-secondary font-semibold cursor-pointer disabled:opacity-50 whitespace-nowrap"
+            >
+              <Cpu className="w-3.5 h-3.5 text-[#ECC964] shrink-0" />
+              <span>{aiProcessing ? 'Consultando motor IA...' : 'Intentar síntesis IA externa'}</span>
+            </button>
+          </div>
         </div>
+
+        {engineNotice && (
+          <div className="p-3 rounded-xl chalamandra-chamber text-[#FAF6ED] font-mono text-[11px]">
+            {engineNotice}
+          </div>
+        )}
       </div>
 
-      {/* Completion or Error Feedback */}
       {state.sessionCompleted && (
-        <div className="no-print p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/35 text-xs text-emerald-200 flex items-center justify-between gap-3">
+        <div className="no-print p-4 rounded-xl chalamandra-surface-emerald text-xs text-emerald-100 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-300 shrink-0" />
             <span>
-              Sesión finalizada y respaldada en este navegador (y en memoria temporal activa del servidor). Puedes volver a cualquier paso si necesitas ajustar respuestas y regenerar este informe.
+              Ruta inicial sellada. Si modificas cualquier respuesta en las fases 01 a 04, este informe se actualizará con tus nuevos datos.
             </span>
           </div>
           <button
             type="button"
             onClick={() => onJumpToModule(1)}
-            className="text-emerald-300 hover:underline font-mono shrink-0 cursor-pointer"
+            className="text-emerald-200 hover:underline font-mono shrink-0 cursor-pointer whitespace-nowrap"
           >
             Editar respuestas
           </button>
@@ -186,389 +333,326 @@ export default function Module07ExecutiveReport({
       )}
 
       {saveError && (
-        <div className="no-print p-4 rounded-2xl bg-rose-500/10 border border-rose-500/35 text-xs text-rose-200 flex items-center gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+        <div className="no-print p-4 rounded-xl chalamandra-surface-rose text-xs text-rose-100 flex items-center gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-rose-300 shrink-0" />
           <span>{saveError}</span>
         </div>
       )}
 
       {/* ============================================================== */}
-      {/* PRINTABLE EXECUTIVE DOCUMENT CONTAINER                         */}
+      {/* DOSSIER EJECUTIVO A4 (OBSIDIANA/ORO EN PANTALLA · B/N EN A4)   */}
       {/* ============================================================== */}
-      <div className="p-8 sm:p-12 rounded-3xl bg-slate-900 border border-slate-800 space-y-8 shadow-2xl print:p-0 print:border-none print:shadow-none print:bg-white print:text-slate-900">
-        {/* Official Header */}
-        <div className="border-b-2 border-amber-500/40 pb-6 flex flex-col sm:flex-row sm:items-start justify-between gap-6 print:border-slate-300">
-          <div className="space-y-1">
-            <div className="flex items-center gap-3">
-              <img
-                src="/images/chalamandra-emblem.jpg"
-                alt="Logo Salamandra Chalamandra Magistral"
-                referrerPolicy="no-referrer"
-                className="w-11 h-11 rounded-xl object-cover shadow-md ring-1 ring-amber-500/40 print:border print:border-slate-800"
-              />
+      <article className="print-dossier relative overflow-hidden p-7 sm:p-10 rounded-2xl chalamandra-surface-elevated space-y-6">
+        <AlchemicalGeometryBackdrop className="absolute -right-28 -top-28 w-[420px] h-[420px] text-[#ECC964] opacity-[0.16]" />
+
+        {/* Cabecera Oficial del Dossier */}
+        <header className="relative z-10 border-b border-[#D4AF37]/38 print:border-slate-300 pb-5 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3.5">
+              <ChalamandraMedallion size="md" className="print:border print:border-slate-400 print:rounded-lg" />
               <div>
-                <span className="font-extrabold text-base tracking-wider text-slate-100 print:text-slate-900">
-                  CHALAMANDRA MAGISTRAL · DECOX
+                <span className="font-display font-semibold text-sm tracking-wide text-[#FAF6ED] print:text-slate-900 block">
+                  Chalamandra Magistral · <span className="text-[#ECC964] print:text-slate-900">Interactive DecoX</span>
                 </span>
-                <span className="block text-[10px] font-mono text-amber-400 print:text-amber-700">
-                  SESIÓN DE DESCUBRIMIENTO · SÍNTESIS PERSONALIZADA
+                <span className="text-[11px] font-mono text-[#ECC964] print:text-slate-600">
+                  Informe Ejecutivo · Sesión de Descubrimiento (5 Fases)
                 </span>
               </div>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-100 print:text-slate-900 pt-3">
-              INFORME DE EXPLORACIÓN Y MAPA ESTRATÉGICO
+            <h1 className="font-display text-xl sm:text-2xl font-semibold text-[#FAF6ED] print:text-slate-900 pt-1 text-balance">
+              {state.challenge.title.trim() || 'Ruta Inicial de Descubrimiento Aplicado'}
             </h1>
           </div>
 
-          <div className="sm:text-right text-xs font-mono text-slate-400 print:text-slate-600 space-y-0.5">
+          <div className="sm:text-right text-xs font-mono text-[#D6CFC2] print:text-slate-600 space-y-0.5 tabular-nums">
             {state.isDemoCase && (
-              <span className="inline-block px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 print:text-amber-800 font-bold mb-1">
-                CASO DE REFERENCIA DEMOSTRATIVO
+              <span className="block font-bold text-[#FFF0BE] print:text-slate-800">
+                CASO DEMOSTRATIVO DE REFERENCIA
               </span>
             )}
-            <span className="block font-bold text-slate-200 print:text-slate-800">
-              DOCUMENTO DE TRABAJO PRIVADO · ID: {state.sessionId}
+            <span className="block font-semibold text-[#FFF0BE] print:text-slate-900">
+              ID: {state.sessionId}
             </span>
-            <span>
+            <span className="block">
               Fecha: {effectiveMap.generatedAt || new Date().toLocaleDateString('es-ES')}
             </span>
             <span className="block">
-              Titular: {state.challenge.clientName || 'Participante de Sesión'}
+              Recorrido:{' '}
+              {state.challenge.track === 'organizacion' ? 'Organizaciones' : 'Personas'} ·{' '}
+              {state.challenge.domain || 'Negocios'}
             </span>
-            {state.challenge.companyOrRole && (
-              <span className="block text-amber-400 print:text-amber-700">
-                {state.challenge.companyOrRole}
+            {(state.challenge.clientName || state.challenge.companyOrRole) && (
+              <span className="block text-[#FAF6ED] print:text-slate-800">
+                {[state.challenge.clientName, state.challenge.companyOrRole]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
             )}
           </div>
-        </div>
+        </header>
 
-        {/* Section 1: Challenge & Context */}
-        <div className="space-y-3 print-card p-5 rounded-2xl bg-slate-950/60 border border-slate-850">
-          <h2 className="text-xs font-bold text-amber-400 print:text-amber-700 font-mono uppercase tracking-wider">
-            01. CONTEXTO Y RECORRIDO ({state.challenge.track === 'organizacion' ? 'ORGANIZACIONES' : 'PERSONAS'} · {state.challenge.explorationFocus || 'Exploración'})
+        {/* 01. Síntesis del Problema Prioritario y Objetivo */}
+        <section className="relative z-10 print-card p-5 rounded-xl chalamandra-surface space-y-3 text-xs">
+          <h2 className="font-display font-semibold text-sm text-[#FFF0BE] print:text-slate-900">
+            01. Problema prioritario, lo intentado y cambio deseado
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <p className="text-[#FAF6ED] print:text-slate-900 font-medium leading-relaxed">
+            {effectiveMap.summaryChallenge}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
             <div>
-              <span className="text-slate-400 block font-mono">Frente Definido:</span>
-              <p className="font-semibold text-slate-200 print:text-slate-900">
-                {state.challenge.title || 'Sin título especificado'}
+              <span className="font-mono text-[#ECC964] print:text-slate-600 block">
+                Situación y fricción actual:
+              </span>
+              <p className="text-[#DDD6C7] print:text-slate-800 mt-0.5 leading-relaxed">
+                {[state.challenge.currentSituation.trim(), state.challenge.criticalFriction.trim()]
+                  .filter(Boolean)
+                  .join(' — ') || 'Pendiente de detallar en Fase 01.'}
               </p>
             </div>
+
             <div>
-              <span className="text-slate-400 block font-mono">Ámbito y Horizonte:</span>
-              <p className="font-semibold text-slate-200 print:text-slate-900">
-                {state.challenge.category} ({state.challenge.timeframe || 'Por definir'})
-              </p>
-            </div>
-            <div className="md:col-span-2">
-              <span className="text-slate-400 block font-mono">Situación Observable y Fricción:</span>
-              <p className="text-slate-300 print:text-slate-700 mt-0.5 leading-relaxed">
-                {state.challenge.currentSituation}{' '}
-                {state.challenge.criticalFriction
-                  ? `— Fricción crítica: ${state.challenge.criticalFriction}`
+              <span className="font-mono text-[#ECC964] print:text-slate-600 block">
+                Intentos previos y restricciones reales:
+              </span>
+              <p className="text-[#DDD6C7] print:text-slate-800 mt-0.5 leading-relaxed">
+                {state.challenge.previousAttempts?.trim()
+                  ? `Intentado: ${state.challenge.previousAttempts.trim()} `
                   : ''}
-              </p>
-            </div>
-            {state.challenge.keyActorsAndIncentives && (
-              <div className="md:col-span-2">
-                <span className="text-slate-400 block font-mono">Actores e Incentivos del Tablero:</span>
-                <p className="text-slate-300 print:text-slate-700 mt-0.5 leading-relaxed">
-                  {state.challenge.keyActorsAndIncentives}
-                </p>
-              </div>
-            )}
-            <div className="md:col-span-2">
-              <span className="text-slate-400 block font-mono">Indicador Verificable de Éxito:</span>
-              <p className="text-emerald-400 print:text-emerald-700 font-mono font-bold mt-0.5">
-                {state.challenge.primaryMetric || 'Pendiente de cuantificar'}
+                {state.challenge.constraintsSummary?.trim()
+                  ? `Restricciones: ${state.challenge.constraintsSummary.trim()}`
+                  : state.strategicProfile.realConstraints.join('; ') ||
+                    'Sin restricciones adicionales declaradas.'}
               </p>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Section 2: Epistemic Distinction (Facts / Hypotheses / Imagined Possibilities / Uncertainties) */}
-        <div className="space-y-3 print-card p-5 rounded-2xl bg-slate-950/60 border border-slate-850">
-          <h2 className="text-xs font-bold text-cyan-400 print:text-cyan-800 font-mono uppercase tracking-wider">
-            02. CLARIFICACIÓN EPISTÉMICA: HECHOS, HIPÓTESIS, POSIBILIDADES E INCERTIDUMBRES
+        {/* 02. Hipótesis de Trabajo e Incertidumbres */}
+        <section className="relative z-10 print-card p-5 rounded-xl chalamandra-surface space-y-3 text-xs">
+          <h2 className="font-display font-semibold text-sm text-[#FFF0BE] print:text-slate-900">
+            02. Hipótesis de trabajo e incertidumbres a verificar
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div>
-              <span className="font-mono font-bold text-cyan-300 print:text-cyan-800 block mb-1">
-                Hechos Declarados:
-              </span>
-              <ul className="list-disc list-inside text-slate-300 print:text-slate-700 space-y-1">
-                {(effectiveMap.facts || derivedBundle.strategicMap.facts || []).map((f, i) => (
-                  <li key={i}>{f}</li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <span className="font-mono font-bold text-emerald-300 print:text-emerald-800 block mb-1">
-                Hipótesis Medibles (Correlación ≠ Causalidad):
-              </span>
-              <ul className="list-disc list-inside text-slate-300 print:text-slate-700 space-y-1">
-                {(
-                  effectiveMap.hypotheses ||
-                  effectiveMap.interpretations ||
-                  derivedBundle.strategicMap.hypotheses ||
-                  []
-                ).map((it, i) => (
-                  <li key={i}>{it}</li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <span className="font-mono font-bold text-purple-300 print:text-purple-800 block mb-1">
-                Posibilidades Imaginadas (Mundo Simulado):
-              </span>
-              <ul className="list-disc list-inside text-slate-300 print:text-slate-700 space-y-1">
-                {(
-                  effectiveMap.imaginedPossibilities ||
-                  derivedBundle.strategicMap.imaginedPossibilities ||
-                  []
-                ).map((pos, i) => (
-                  <li key={i}>{pos}</li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <span className="font-mono font-bold text-amber-300 print:text-amber-800 block mb-1">
-                Incertidumbres por Verificar:
-              </span>
-              <ul className="list-disc list-inside text-slate-300 print:text-slate-700 space-y-1">
-                {(effectiveMap.uncertainties || derivedBundle.strategicMap.uncertainties || []).map(
-                  (u, i) => (
-                    <li key={i}>{u}</li>
-                  )
-                )}
-              </ul>
-            </div>
-          </div>
-        </div>
 
-        {/* Section 3: Strategic Synthesis, Critical Points & Next Steps */}
-        <div className="space-y-4 print-card p-6 rounded-2xl bg-gradient-to-r from-amber-500/10 via-yellow-500/5 to-slate-950 border border-amber-500/40">
-          <div className="text-center space-y-1">
-            <span className="text-[10px] font-mono text-amber-400 print:text-amber-800 font-bold uppercase tracking-widest">
-              03. PRINCIPIO RECTOR Y NODO CRÍTICO
-            </span>
-            <h3 className="text-lg sm:text-2xl font-extrabold text-amber-300 print:text-amber-800 font-mono">
-              "{effectiveMap.tacticalMantra}"
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2">
+          <div className="space-y-2.5">
             <div>
-              <span className="text-slate-400 font-mono block">Lectura Sistémica del Caso:</span>
-              <p className="text-slate-200 print:text-slate-900 mt-0.5 leading-relaxed">
+              <span className="font-mono text-[#ECC964] print:text-slate-600 block">
+                Hipótesis central (sujeta a evidencia):
+              </span>
+              <p className="text-[#FAF6ED] print:text-slate-900 font-medium mt-0.5 leading-relaxed">
                 {effectiveMap.keyInsight}
               </p>
             </div>
-            <div>
-              <span className="text-slate-400 font-mono block">Movimientos Operativos (24–72h):</span>
-              <ul className="list-disc list-inside text-slate-200 print:text-slate-900 mt-0.5 space-y-1">
-                {(effectiveMap.nextSteps || []).map((step, i) => (
-                  <li key={i}>{step}</li>
+
+            {archetypeDetails && (
+              <div className="pt-1">
+                <span className="font-mono text-violet-300 print:text-slate-600 block">
+                  Arquetipo Interactive incorporado como hipótesis (no como etiqueta fija):
+                </span>
+                <p className="text-[#DDD6C7] print:text-slate-800 mt-0.5 leading-relaxed">
+                  <strong className="text-[#FAF6ED] print:text-slate-900">{archetypeDetails.name}</strong> —{' '}
+                  {state.strategicProfile.archetypeHypothesisNotes?.trim() ||
+                    `Vigilar punto ciego operativo: ${archetypeDetails.blindspots[0]}.`}
+                </p>
+              </div>
+            )}
+
+            <div className="pt-1">
+              <span className="font-mono text-cyan-300 print:text-slate-600 block mb-1">
+                Incertidumbres abiertas:
+              </span>
+              <ul className="list-disc list-inside text-[#DDD6C7] print:text-slate-800 space-y-1">
+                {uncertaintiesList.map((u, idx) => (
+                  <li key={idx}>{u}</li>
                 ))}
               </ul>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Section 4: Hacks & Reversible Experiments */}
-        {(prioritizedHacks.length > 0 || state.experiments.length > 0) && (
-          <div className="space-y-4 print-card p-5 rounded-2xl bg-slate-950/60 border border-slate-850">
-            <h2 className="text-xs font-bold text-purple-400 print:text-purple-800 font-mono uppercase tracking-wider">
-              04. LOS HACKS DE CHALAMANDRA APLICADOS Y EXPERIMENTOS CONTROLADOS
+        {/* 03. Hack Seleccionado, Plantilla Metodológica y Lente de Poder */}
+        <section className="relative z-10 print-card p-5 rounded-xl chalamandra-surface space-y-3.5 text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <h2 className="font-display font-semibold text-sm text-[#FFF0BE] print:text-slate-900">
+              03. Herramienta Interactive aplicada: {chosenHack.title} ({chosenHack.metodo})
             </h2>
-
-            {prioritizedHacks.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {prioritizedHacks.map((h) => (
-                  <div
-                    key={h.id}
-                    className="p-3 rounded-xl bg-slate-900 print:bg-slate-100 border border-slate-800 print:border-slate-300 text-xs"
-                  >
-                    <span className="font-bold text-amber-400 print:text-amber-800 block">
-                      {h.name} · [{h.epistemicRole}]
-                    </span>
-                    <span className="text-[11px] font-mono text-cyan-300 print:text-cyan-800 block mt-0.5">
-                      Entregable: {h.expectedDeliverable}
-                    </span>
-                    <p className="text-slate-300 print:text-slate-700 leading-snug mt-1">
-                      {state.hackNotes[h.id] || h.subtitle}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {state.experiments.length > 0 && (
-              <div className="space-y-2 pt-1">
-                {state.experiments.map((exp) => (
-                  <div
-                    key={exp.id}
-                    className="p-3 rounded-xl bg-slate-900 print:bg-slate-100 border border-slate-800 print:border-slate-300 text-xs flex flex-col sm:flex-row justify-between gap-2"
-                  >
-                    <div>
-                      <strong className="text-emerald-400 print:text-emerald-700">
-                        [{exp.hackName}]
-                      </strong>{' '}
-                      {exp.hypothesis}
-                      <p className="text-slate-300 print:text-slate-700 text-[11px] mt-0.5">
-                        Variación: {exp.concreteAction}
-                      </p>
-                      {exp.reversibilityNote && (
-                        <p className="text-slate-400 print:text-slate-600 text-[11px] mt-0.5">
-                          Reversibilidad: {exp.reversibilityNote}
-                        </p>
-                      )}
-                    </div>
-                    <div className="sm:text-right shrink-0 font-mono text-[11px]">
-                      <span className="text-amber-400 print:text-amber-800 block">
-                        {exp.executionWindow} · {exp.status}
-                      </span>
-                      <span className="text-slate-400">{exp.successIndicator}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Section 5: Fase C Real World Option Comparison & Live Session Brief */}
-        <div className="space-y-4 print-card p-5 rounded-2xl bg-slate-950/60 border border-slate-850">
-          <h2 className="text-xs font-bold text-amber-400 print:text-amber-800 font-mono uppercase tracking-wider">
-            05. FASE C (MUNDO REAL): CONTRASTE DE ALTERNATIVAS Y PUENTE A SESIÓN EN VIVO
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-            {(effectiveMap.realWorldOptions || derivedBundle.strategicMap.realWorldOptions || []).map(
-              (opt, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 rounded-xl bg-slate-900 print:bg-slate-100 border border-slate-800 print:border-slate-300 space-y-1"
-                >
-                  <span className="font-bold text-slate-100 print:text-slate-900 block">
-                    {opt.optionTitle}
-                  </span>
-                  <span className="block text-[11px] text-slate-400">
-                    Recursos: {opt.resourcesRequired}
-                  </span>
-                  <span className="block text-[11px] text-rose-300 print:text-rose-700">
-                    Riesgo: {opt.keyRisk}
-                  </span>
-                  <span className="block text-[11px] text-emerald-300 print:text-emerald-800">
-                    Resultado: {opt.expectedOutcome}
-                  </span>
-                </div>
-              )
-            )}
+            <span className="font-mono text-[11px] text-[#ECC964] print:text-slate-600">
+              {linkedPower
+                ? `Poder asociado: ${linkedPower.title}`
+                : 'Sin poderDeSherezadeId en catálogo'}
+            </span>
           </div>
 
-          {(effectiveMap.liveSessionBrief || derivedBundle.strategicMap.liveSessionBrief) && (
-            <div className="p-4 rounded-xl bg-slate-900 print:bg-slate-100 border border-amber-500/30 print:border-slate-300 text-xs space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <strong className="text-amber-300 print:text-amber-800 font-mono uppercase">
-                  Guía para la Sesión en Vivo y Siguiente Paso Defendible
-                </strong>
-                <span className="text-[11px] font-mono text-slate-400 print:text-slate-600">
-                  Referencia ecosistema: USD 27 (cobro no configurado en esta aplicación)
-                </span>
-              </div>
-              <p className="text-slate-200 print:text-slate-900">
-                <strong>Siguiente paso defendible:</strong>{' '}
-                {
-                  (effectiveMap.liveSessionBrief || derivedBundle.strategicMap.liveSessionBrief)
-                    ?.defensibleNextStep
-                }
-              </p>
-              <ul className="list-disc list-inside text-slate-300 print:text-slate-700 space-y-1">
-                {(
-                  (effectiveMap.liveSessionBrief || derivedBundle.strategicMap.liveSessionBrief)
-                    ?.questionsForLiveSession || []
-                ).map((q, idx) => (
-                  <li key={idx}>{q}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        {/* Section 6: 30-Day Execution Plan */}
-        <div className="space-y-4 print-card p-5 rounded-2xl bg-slate-950/60 border border-slate-850">
-          <h2 className="text-xs font-bold text-emerald-400 print:text-emerald-800 font-mono uppercase tracking-wider">
-            06. HOJA DE RUTA A 30 DÍAS EN EL MUNDO REAL
-          </h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            {effectiveActionPlan.map((w) => (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {plantillaPairs.map((pair, idx) => (
               <div
-                key={w.weekNumber}
-                className="p-3.5 rounded-xl bg-slate-900 print:bg-slate-100 border border-slate-800 print:border-slate-300 space-y-2"
+                key={pair.aspecto}
+                className="print-subcard p-3.5 rounded-lg chalamandra-chamber space-y-1"
               >
-                <span className="font-bold text-amber-400 print:text-amber-800 font-mono block">
-                  {w.title}
+                <span className="font-semibold text-[#FFF0BE] print:text-slate-900 block tabular-nums">
+                  {idx + 1}. {pair.aspecto}
                 </span>
-                <p className="text-[11px] text-slate-400">{w.focusObjective}</p>
-                <div className="space-y-1">
-                  {w.tasks.map((t) => (
-                    <div
-                      key={t.id}
-                      className="flex items-start gap-1.5 text-slate-300 print:text-slate-800 text-[11px]"
-                    >
-                      <span>{t.completed ? '☑' : '☐'}</span>
-                      <span>
-                        {t.label} <em className="text-slate-500 font-mono">({t.kpi})</em>
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <p className="text-[#DDD6C7] print:text-slate-800 leading-relaxed">
+                  {pair.respuesta || 'Pendiente de completar en Fase 03.'}
+                </p>
               </div>
             ))}
           </div>
-        </div>
 
-        {/* Footer Sign-off */}
-        <div className="border-t border-slate-800 print:border-slate-300 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 print:text-slate-600">
-          <div className="flex items-center gap-3">
-            <ShieldCheck className="w-7 h-7 text-amber-400 print:text-amber-700" />
-            <div>
-              <span className="font-bold text-slate-200 print:text-slate-800 block">
-                Chalamandra Magistral · Interactive DecoX
+          {state.powerLens?.used && state.powerLens.directive.trim() && (
+            <div className="print-subcard p-3.5 rounded-lg chalamandra-surface-violet space-y-1">
+              <span className="font-mono font-semibold text-violet-200 print:text-slate-900 block">
+                Lente de Poder complementario utilizado ({state.powerLens.poderTitle} ·{' '}
+                {state.powerLens.domain}):
               </span>
-              <span>Síntesis derivada de las respuestas registradas en la Sesión de Descubrimiento</span>
+              <p className="text-[#FAF6ED] print:text-slate-800 leading-relaxed">
+                {state.powerLens.directive}
+              </p>
+            </div>
+          )}
+        </section>
+
+        {/* 04. Orientación SRAP Aplicada al Caso */}
+        <section className="relative z-10 print-card p-5 rounded-xl chalamandra-surface space-y-3.5 text-xs">
+          <h2 className="font-display font-semibold text-sm text-[#FFF0BE] print:text-slate-900">
+            04. Orientación operativa SRAP
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="print-subcard p-3.5 rounded-lg chalamandra-surface-cyan space-y-1">
+              <span className="font-mono font-bold text-cyan-200 print:text-slate-900 block">
+                S · Sincronizar
+              </span>
+              <p className="text-[#FAF6ED] print:text-slate-800 leading-relaxed">
+                {effectiveSrap.sincronizar}
+              </p>
+            </div>
+
+            <div className="print-subcard p-3.5 rounded-lg chalamandra-chamber space-y-1">
+              <span className="font-mono font-bold text-[#FFF0BE] print:text-slate-900 block">
+                R · Reconocer
+              </span>
+              <p className="text-[#FAF6ED] print:text-slate-800 leading-relaxed">
+                {effectiveSrap.reconocer}
+              </p>
+            </div>
+
+            <div className="print-subcard p-3.5 rounded-lg chalamandra-surface-emerald space-y-1">
+              <span className="font-mono font-bold text-emerald-200 print:text-slate-900 block">
+                A · Activar (Acción inmediata)
+              </span>
+              <p className="text-[#FAF6ED] print:text-slate-800 leading-relaxed">
+                {effectiveSrap.activar}
+              </p>
+            </div>
+
+            <div className="print-subcard p-3.5 rounded-lg chalamandra-surface-rose space-y-1">
+              <span className="font-mono font-bold text-rose-200 print:text-slate-900 block">
+                P · Criterio explícito de pausa
+              </span>
+              <p className="text-[#FAF6ED] print:text-slate-800 leading-relaxed">
+                {effectiveSrap.pausa}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* 05. Ruta Inicial: Acción Inmediata, Criterio de Pausa y Siguiente Paso */}
+        <section className="relative z-10 print-card p-5 rounded-xl chalamandra-surface-elevated space-y-3.5 text-xs">
+          <h2 className="font-display font-semibold text-sm text-[#FFF0BE] print:text-slate-900">
+            05. Ruta inicial de salida y preparación para sesión en vivo
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <span className="font-mono font-semibold text-[#ECC964] print:text-slate-700 block">
+                1. Acción inmediata (24–72 h)
+              </span>
+              <p className="text-[#FAF6ED] print:text-slate-900 font-medium leading-relaxed">
+                {effectiveSrap.immediateStep24h}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <span className="font-mono font-semibold text-rose-300 print:text-slate-700 block">
+                2. Criterio de pausa y revisión
+              </span>
+              <p className="text-[#DDD6C7] print:text-slate-800 leading-relaxed">
+                {effectiveSrap.pausa}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <span className="font-mono font-semibold text-emerald-300 print:text-slate-700 block">
+                3. Siguiente paso
+              </span>
+              <p className="text-[#DDD6C7] print:text-slate-800 leading-relaxed">
+                {effectiveSrap.nextStepAfterPause}
+              </p>
             </div>
           </div>
 
-          <div className="sm:text-right font-mono text-[11px]">
-            <span className="block text-amber-400 print:text-amber-800 font-bold">
-              {state.sessionCompleted ? 'Estado: Sesión Finalizada' : 'Estado: En Revisión Activa'}
+          {effectiveActionPlan.some((w) => w.tasks.length > 0) && (
+            <div className="pt-3 border-t border-[#D4AF37]/30 print:border-slate-300 space-y-2.5">
+              <span className="font-mono font-semibold text-[#FFF0BE] print:text-slate-800 block">
+                Secuencia de compromisos y tareas registradas:
+              </span>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                {effectiveActionPlan.map((w) => (
+                  <div key={w.weekNumber} className="space-y-1">
+                    <span className="font-display font-semibold text-[#ECC964] print:text-slate-900 block">
+                      {w.title}
+                    </span>
+                    <ul className="space-y-1 text-[11px] text-[#DDD6C7] print:text-slate-800">
+                      {w.tasks.map((t) => (
+                        <li key={t.id}>
+                          • {t.label}{' '}
+                          <span className="text-[#B8B0A0] print:text-slate-600 font-mono">
+                            ({t.kpi}
+                            {t.isCustom ? ' · Propia' : ''})
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Pie del documento */}
+        <footer className="relative z-10 border-t border-[#D4AF37]/30 print:border-slate-300 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-[#C4BCAD] print:text-slate-600">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-[#ECC964] print:text-slate-700 shrink-0" />
+            <span>
+              Chalamandra Magistral · Interactive DecoX — Hipótesis y ruta inicial derivadas de las respuestas del participante.
             </span>
           </div>
-        </div>
-      </div>
+          <span className="font-mono text-[#FFF0BE] print:text-slate-800">
+            {state.sessionCompleted ? 'Estado: Sesión sellada' : 'Estado: Borrador activo'}
+          </span>
+        </footer>
+      </article>
 
-      {/* Bottom Nav Buttons (Hidden in print) */}
+      {/* Navegación inferior (Oculta en impresión) */}
       <div className="no-print flex items-center justify-between pt-2">
         <button
           type="button"
           onClick={onPrev}
-          className="flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200 cursor-pointer"
+          className="flex items-center gap-2 px-4 py-3 rounded-xl chalamandra-btn-secondary text-xs font-semibold cursor-pointer whitespace-nowrap"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Volver al Plan de 30 Días</span>
+          <ArrowLeft className="w-4 h-4 shrink-0" />
+          <span>Volver a Fase 04 · Orientar con SRAP</span>
         </button>
 
         <button
           type="button"
-          onClick={() => onJumpToModule(DISCOVERY_SYNTHESIS_STEP)}
-          className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-950/40 cursor-pointer transition-all hover:scale-[1.02]"
+          onClick={() => onJumpToModule(3)}
+          className="px-4 py-2.5 rounded-xl chalamandra-btn-secondary text-xs font-semibold cursor-pointer whitespace-nowrap"
         >
-          <Award className="w-4 h-4" />
-          <span>Volver a Fase C · Mundo Real</span>
+          Revisar Hack y Plantilla (Fase 03)
         </button>
       </div>
     </div>

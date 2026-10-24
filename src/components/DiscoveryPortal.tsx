@@ -2,59 +2,48 @@ import React, { useState, useEffect } from 'react';
 import {
   Target,
   Compass,
-  FlaskConical,
-  Crown,
-  Calendar,
+  BookOpen,
+  Zap,
   FileText,
   Cloud,
-  Bot,
-  Zap,
   ArrowRight,
   RotateCcw,
-  Box,
-  Sparkles,
   Play,
   Layers,
   User,
   Building2,
-  PenTool,
-  Cpu,
-  Flame,
-  BarChart3,
-  Check
+  Check,
+  Home
 } from 'lucide-react';
 import {
   DiscoveryDeliverableState,
   ActiveView,
-  StrategicMapData,
   ActionPlanWeek,
-  DiscoveryTrackType
+  DiscoveryTrackType,
+  PowerLensApplicationState,
+  SrapOrientationState
 } from '../types';
 import {
   createBlankDiscoveryState,
   createDemoDiscoveryState,
   generateDiscoverySessionId
 } from '../utils/constants';
+import { HACKS_DATA } from '../data/interactiveCatalog';
 import {
   calculateDiscoveryCompletion,
   DISCOVERY_TRACK_OPTIONS,
-  MUNDO_PHASES_OVERVIEW,
-  DISCOVERY_FLOW_STEPS,
-  DISCOVERY_PHASE_GROUPS,
-  STEP_NUM_BY_HACK_ID,
-  DISCOVERY_EXPERIMENTS_STEP,
-  DISCOVERY_SYNTHESIS_STEP,
-  DISCOVERY_PLAN_STEP,
-  DISCOVERY_REPORT_STEP,
-  TOTAL_DISCOVERY_STEPS,
-  DiscoveryFlowPhaseGroup
+  DISCOVERY_FIVE_PHASES,
+  TOTAL_DISCOVERY_STEPS
 } from '../data/discoveryFlowConfig';
+import {
+  ChalamandraMedallion,
+  AlchemicalGeometryBackdrop,
+  AlchemicalHairline
+} from './ChalamandraSeal';
 import Module01Challenge from './discovery/Module01Challenge';
 import Module02StrategicProfile from './discovery/Module02StrategicProfile';
 import Module03SevenHacks from './discovery/Module03SevenHacks';
-import Module04LabExperiments from './discovery/Module04LabExperiments';
-import Module05StrategicMap from './discovery/Module05StrategicMap';
-import Module06ActionPlan from './discovery/Module06ActionPlan';
+import Module04SrapOrientation from './discovery/Module04SrapOrientation';
 import Module07ExecutiveReport from './discovery/Module07ExecutiveReport';
 
 const STORAGE_KEY = 'decox_discovery_deliverable_v2';
@@ -81,46 +70,135 @@ function ensureValidSessionId(candidate?: string, isDemo?: boolean): string {
   return generateDiscoverySessionId(isDemo ? 'DEMO' : 'DX');
 }
 
-function clampModuleStep(step?: number | null): number {
+function clampPhaseStep(step?: number | null): number {
   if (!step || Number.isNaN(step)) return 1;
   return Math.min(Math.max(1, Math.round(step)), TOTAL_DISCOVERY_STEPS);
 }
 
-function getStepIconComponent(stepId: string) {
-  switch (stepId) {
-    case 'contexto':
+function getPhaseIconComponent(phaseId: string) {
+  switch (phaseId) {
+    case 'explorar':
       return Target;
-    case 'epistemologia':
+    case 'decodificar':
       return Compass;
-    case 'scheherazade':
-      return PenTool;
-    case 'hermes':
-      return Layers;
-    case 'carroll':
-      return Compass;
-    case 'nino-8-anos':
-      return Sparkles;
-    case 'hacker':
-      return Cpu;
-    case 'trickster':
-      return Flame;
-    case 'data':
-      return BarChart3;
-    case 'experimentos':
-      return FlaskConical;
-    case 'mundo-real':
-      return Crown;
-    case 'ruta-30d':
-      return Calendar;
-    case 'informe-pdf':
-      return FileText;
+    case 'aplicar-hack':
+      return BookOpen;
+    case 'orientar-srap':
+      return Zap;
+    case 'ruta-inicial':
     default:
-      return Sparkles;
+      return FileText;
   }
 }
 
+function getPhaseAccentClasses(phaseId: string): {
+  badge: string;
+  icon: string;
+  kicker: string;
+} {
+  switch (phaseId) {
+    case 'explorar':
+      return {
+        badge: 'bg-[#1D1710] border-[#ECC964]/70 text-[#FFF0BE]',
+        icon: 'text-[#ECC964]',
+        kicker: 'Hechos y foco'
+      };
+    case 'decodificar':
+      return {
+        badge: 'bg-[#171327] border-violet-400/65 text-violet-200',
+        icon: 'text-violet-300',
+        kicker: 'Hipótesis y evidencia'
+      };
+    case 'aplicar-hack':
+      return {
+        badge: 'bg-[#1F170E] border-amber-400/70 text-amber-200',
+        icon: 'text-amber-300',
+        kicker: '1 Hack oficial'
+      };
+    case 'orientar-srap':
+      return {
+        badge: 'bg-[#0F1E22] border-cyan-400/65 text-cyan-200',
+        icon: 'text-cyan-300',
+        kicker: 'Acción y pausa'
+      };
+    case 'ruta-inicial':
+    default:
+      return {
+        badge: 'bg-[#101F1A] border-emerald-400/65 text-emerald-200',
+        icon: 'text-emerald-300',
+        kicker: 'Dossier PDF / JSON'
+      };
+  }
+}
+
+function hasMeaningfulSavedData(state: DiscoveryDeliverableState): boolean {
+  if (state.isDemoCase) return false;
+  const hasPlantilla = Object.values(state.hackPlantillaResponses || {}).some(
+    (arr) => Array.isArray(arr) && arr.some((v) => typeof v === 'string' && v.trim().length > 0)
+  );
+  return Boolean(
+    state.challenge.title.trim() ||
+      state.challenge.currentSituation.trim() ||
+      state.challenge.criticalFriction.trim() ||
+      state.challenge.expectedOutcome.trim() ||
+      state.challenge.previousAttempts?.trim() ||
+      state.challenge.constraintsSummary?.trim() ||
+      state.challenge.clientName.trim() ||
+      state.strategicProfile.dominantThoughtPattern.trim() ||
+      state.strategicProfile.strategicHypothesis.trim() ||
+      state.strategicProfile.archetypeHypothesis ||
+      state.strategicProfile.realConstraints.length > 0 ||
+      state.strategicProfile.underlyingAssumptions.length > 0 ||
+      hasPlantilla ||
+      state.powerLens?.used ||
+      state.srapOrientation?.isCustomized
+  );
+}
+
+function hydrateDiscoveryState(raw: Partial<DiscoveryDeliverableState>): DiscoveryDeliverableState {
+  const validSid = ensureValidSessionId(raw.sessionId, raw.isDemoCase);
+  const savedTrack = raw.challenge?.track || 'persona';
+  const base = createBlankDiscoveryState(validSid, savedTrack);
+
+  const migratedSelectedHackId =
+    typeof raw.selectedHackId === 'number' && HACKS_DATA.some((h) => h.id === raw.selectedHackId)
+      ? raw.selectedHackId
+      : Array.isArray(raw.selectedHackIds) &&
+        raw.selectedHackIds.length > 0 &&
+        HACKS_DATA.some((h) => h.id === raw.selectedHackIds![0])
+      ? raw.selectedHackIds[0]
+      : null;
+
+  return {
+    ...base,
+    ...raw,
+    sessionId: validSid,
+    currentModule: clampPhaseStep(raw.currentModule),
+    challenge: {
+      ...base.challenge,
+      ...(raw.challenge || {}),
+      track: savedTrack
+    },
+    strategicProfile: {
+      ...base.strategicProfile,
+      ...(raw.strategicProfile || {})
+    },
+    selectedHackId: migratedSelectedHackId,
+    hackPlantillaResponses: raw.hackPlantillaResponses || {},
+    powerLens: {
+      ...base.powerLens,
+      ...(raw.powerLens || {})
+    },
+    srapOrientation: {
+      ...base.srapOrientation,
+      ...(raw.srapOrientation || {})
+    },
+    actionPlan: Array.isArray(raw.actionPlan) && raw.actionPlan.length > 0 ? raw.actionPlan : base.actionPlan
+  };
+}
+
 export default function DiscoveryPortal({
-  setActiveView,
+  setActiveView: _setActiveView,
   initialModule,
   onConsumeInitialModule,
   onSessionMetaChange
@@ -131,20 +209,7 @@ export default function DiscoveryPortal({
       if (saved) {
         const parsed = JSON.parse(saved) as Partial<DiscoveryDeliverableState>;
         if (parsed && parsed.challenge && parsed.strategicProfile) {
-          const validSid = ensureValidSessionId(parsed.sessionId, parsed.isDemoCase);
-          const savedTrack = parsed.challenge.track || 'persona';
-          const base = createBlankDiscoveryState(validSid, savedTrack);
-          return {
-            ...base,
-            ...parsed,
-            currentModule: clampModuleStep(parsed.currentModule),
-            challenge: {
-              ...base.challenge,
-              ...parsed.challenge,
-              track: savedTrack
-            },
-            sessionId: validSid
-          };
+          return hydrateDiscoveryState(parsed);
         }
       }
     } catch {}
@@ -154,15 +219,22 @@ export default function DiscoveryPortal({
   const [selectedStartTrack, setSelectedStartTrack] = useState<DiscoveryTrackType>(
     () => deliverableState.challenge.track || 'persona'
   );
+
+  // Mostrar siempre primero la Portada ceremonial al cargar la aplicación,
+  // conservando intacto cualquier progreso guardado para ofrecer «Continuar sesión».
   const [viewingStartScreen, setViewingStartScreen] = useState<boolean>(
-    () => !deliverableState.sessionStarted && !initialModule
+    () => !(initialModule && initialModule >= 1 && initialModule <= TOTAL_DISCOVERY_STEPS)
   );
   const [activeModule, setActiveModule] = useState<number>(
-    clampModuleStep(initialModule || deliverableState.currentModule || 1)
+    clampPhaseStep(initialModule || deliverableState.currentModule || 1)
   );
   const [syncStatus, setSyncStatus] = useState<'synced' | 'saving' | 'error'>('synced');
   const [confirmReset, setConfirmReset] = useState<boolean>(false);
+  const [confirmCoverNewSession, setConfirmCoverNewSession] = useState<boolean>(false);
   const [sessionVisual, setSessionVisual] = useState<string>(DEFAULT_HERO_VISUAL);
+  const [heroImgFailed, setHeroImgFailed] = useState<boolean>(false);
+
+  const hasSavedProgress = hasMeaningfulSavedData(deliverableState);
 
   useEffect(() => {
     try {
@@ -175,18 +247,33 @@ export default function DiscoveryPortal({
     if (initialModule !== undefined && initialModule !== null) {
       if (initialModule === 0) {
         setViewingStartScreen(true);
+        setConfirmCoverNewSession(false);
       } else if (initialModule >= 1 && initialModule <= TOTAL_DISCOVERY_STEPS) {
         setViewingStartScreen(false);
         setActiveModule(initialModule);
-        setDeliverableState((prev) => ({ ...prev, sessionStarted: true }));
+        setDeliverableState((prev) => {
+          const prevHasData = hasMeaningfulSavedData(prev);
+          if (!prevHasData && prev.isDemoCase && initialModule === 1) {
+            const fresh = createBlankDiscoveryState(generateDiscoverySessionId('DX'), selectedStartTrack);
+            fresh.sessionStarted = true;
+            return fresh;
+          }
+          return {
+            ...prev,
+            sessionStarted: true,
+            challenge: !prevHasData
+              ? { ...prev.challenge, track: selectedStartTrack }
+              : prev.challenge
+          };
+        });
       }
       if (onConsumeInitialModule) {
         onConsumeInitialModule();
       }
     }
-  }, [initialModule, onConsumeInitialModule]);
+  }, [initialModule, onConsumeInitialModule, selectedStartTrack]);
 
-  // Persist locally on every edit under isolated session envelope
+  // Persistir localmente en cada cambio bajo el sessionId actual
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -196,7 +283,7 @@ export default function DiscoveryPortal({
     } catch {}
   }, [deliverableState, activeModule]);
 
-  // Hydrate from server ONLY for this exact validated sessionId (never cross-session)
+  // Hidratar desde el servidor únicamente para el mismo sessionId validado sin borrar datos locales
   useEffect(() => {
     const sid = ensureValidSessionId(deliverableState.sessionId, deliverableState.isDemoCase);
     if (deliverableState.isDemoCase) return;
@@ -206,13 +293,20 @@ export default function DiscoveryPortal({
         const res = await fetch(`/api/discovery/load?clientId=${encodeURIComponent(sid)}`);
         if (!res.ok) return;
         const json = await res.json();
-        if (json.success && json.state && json.state.sessionId === sid && json.state.sessionStarted) {
+        if (
+          json.success &&
+          json.state &&
+          json.state.sessionId === sid &&
+          json.state.sessionStarted
+        ) {
           setDeliverableState((prev) =>
-            prev.sessionStarted ? prev : { ...prev, ...json.state, sessionId: sid }
+            hasMeaningfulSavedData(prev)
+              ? prev
+              : hydrateDiscoveryState({ ...json.state, sessionId: sid })
           );
         }
       } catch {
-        // Local storage remains authoritative
+        // localStorage sigue siendo la fuente local principal
       }
     }
     loadServerState();
@@ -252,24 +346,91 @@ export default function DiscoveryPortal({
     }
   };
 
-  // Mark map synthesis AND derived 30-day plan stale whenever upstream inputs change
+  // Invalidar síntesis previa y marcar SRAP/Ruta como pendientes de sincronización cuando se editan Fases 1, 2 o 3
   const updateUpstreamState = (patch: Partial<DiscoveryDeliverableState>) => {
     setDeliverableState((prev) => ({
       ...prev,
       ...patch,
       sessionStarted: true,
       sessionCompleted: false,
+      srapNeedsSync: true,
       planNeedsSync: true,
       strategicMap: {
         ...prev.strategicMap,
         ...(patch.strategicMap || {}),
-        isSynthesized: patch.strategicMap ? patch.strategicMap.isSynthesized : false
+        isSynthesized: false
       }
     }));
   };
 
+  const handleSelectSingleHack = (hackId: number) => {
+    updateUpstreamState({
+      selectedHackId: hackId,
+      selectedHackIds: [hackId]
+    });
+  };
+
+  const handleUpdatePlantillaField = (hackId: number, fieldIndex: number, value: string) => {
+    const hack = HACKS_DATA.find((h) => h.id === hackId);
+    const prevArr = deliverableState.hackPlantillaResponses[hackId] || ['', '', ''];
+    const nextArr = [...prevArr];
+    nextArr[fieldIndex] = value;
+
+    const summaryNote = hack
+      ? hack.plantillaMetodologica
+          .map((item, idx) =>
+            nextArr[idx]?.trim() ? `${item.aspecto}: ${nextArr[idx].trim()}` : null
+          )
+          .filter(Boolean)
+          .join(' | ')
+      : '';
+
+    updateUpstreamState({
+      selectedHackId: hackId,
+      selectedHackIds: [hackId],
+      hackPlantillaResponses: {
+        ...deliverableState.hackPlantillaResponses,
+        [hackId]: nextArr
+      },
+      hackNotes: {
+        ...deliverableState.hackNotes,
+        [hackId]: summaryNote
+      }
+    });
+  };
+
+  const handleUpdatePowerLens = (updatedLens: PowerLensApplicationState) => {
+    updateUpstreamState({
+      powerLens: updatedLens
+    });
+  };
+
+  const handleUpdateSrap = (updatedSrap: SrapOrientationState, clearSyncFlag = true) => {
+    setDeliverableState((prev) => ({
+      ...prev,
+      sessionStarted: true,
+      sessionCompleted: false,
+      srapNeedsSync: clearSyncFlag ? false : prev.srapNeedsSync,
+      planNeedsSync: true,
+      srapOrientation: updatedSrap,
+      strategicMap: {
+        ...prev.strategicMap,
+        isSynthesized: false
+      }
+    }));
+  };
+
+  const handleUpdateActionPlan = (updatedPlan: ActionPlanWeek[], clearPlanSync = false) => {
+    setDeliverableState((prev) => ({
+      ...prev,
+      actionPlan: updatedPlan,
+      planNeedsSync: clearPlanSync ? false : prev.planNeedsSync
+    }));
+  };
+
   const handleStartFreshSession = (trackOverride?: DiscoveryTrackType) => {
-    const chosenTrack = trackOverride || selectedStartTrack || deliverableState.challenge.track || 'persona';
+    const chosenTrack =
+      trackOverride || selectedStartTrack || deliverableState.challenge.track || 'persona';
     const fresh = createBlankDiscoveryState(generateDiscoverySessionId('DX'), chosenTrack);
     fresh.sessionStarted = true;
     setDeliverableState(fresh);
@@ -277,12 +438,16 @@ export default function DiscoveryPortal({
     setActiveModule(1);
     setViewingStartScreen(false);
     setConfirmReset(false);
+    setConfirmCoverNewSession(false);
     setSyncStatus('synced');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleContinueSession = () => {
     setDeliverableState((prev) => ({ ...prev, sessionStarted: true }));
     setViewingStartScreen(false);
+    setConfirmCoverNewSession(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleLoadReferenceCase = (trackOverride?: DiscoveryTrackType) => {
@@ -293,94 +458,47 @@ export default function DiscoveryPortal({
     setActiveModule(1);
     setViewingStartScreen(false);
     setConfirmReset(false);
+    setConfirmCoverNewSession(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const currentStepDef =
-    DISCOVERY_FLOW_STEPS.find((s) => s.num === activeModule) || DISCOVERY_FLOW_STEPS[0];
-  const prevStepDef = DISCOVERY_FLOW_STEPS.find((s) => s.num === activeModule - 1);
-  const nextStepDef = DISCOVERY_FLOW_STEPS.find((s) => s.num === activeModule + 1);
-
-  const isStepPopulated = (stepNum: number): boolean => {
-    const step = DISCOVERY_FLOW_STEPS.find((s) => s.num === stepNum);
-    if (!step) return false;
-    if (step.num === 1) {
+  const isPhasePopulated = (phaseNum: number): boolean => {
+    if (phaseNum === 1) {
       return Boolean(
-        deliverableState.challenge.title.trim() ||
-          deliverableState.challenge.currentSituation.trim()
+        deliverableState.challenge.expectedOutcome.trim() &&
+          (deliverableState.challenge.currentSituation.trim() ||
+            deliverableState.challenge.criticalFriction.trim())
       );
     }
-    if (step.num === 2) {
+    if (phaseNum === 2) {
       return Boolean(
         deliverableState.strategicProfile.dominantThoughtPattern.trim() ||
-          deliverableState.strategicProfile.underlyingAssumptions.length > 0 ||
+          deliverableState.strategicProfile.strategicHypothesis.trim() ||
           deliverableState.strategicProfile.realConstraints.length > 0
       );
     }
-    if (step.hackId) {
+    if (phaseNum === 3) {
+      const hid = deliverableState.selectedHackId;
+      if (!hid) return false;
+      const arr = deliverableState.hackPlantillaResponses[hid] || [];
+      return arr.some((v) => v && v.trim().length > 0);
+    }
+    if (phaseNum === 4) {
       return Boolean(
-        deliverableState.selectedHackIds.includes(step.hackId) ||
-          deliverableState.hackNotes[step.hackId]?.trim()
+        deliverableState.srapOrientation.activar.trim() &&
+          deliverableState.srapOrientation.pausa.trim()
       );
     }
-    if (step.num === DISCOVERY_EXPERIMENTS_STEP) {
-      return deliverableState.experiments.length > 0;
-    }
-    if (step.num === DISCOVERY_SYNTHESIS_STEP) {
-      return Boolean(deliverableState.strategicMap.isSynthesized);
-    }
-    if (step.num === DISCOVERY_PLAN_STEP) {
-      return deliverableState.actionPlan.some((w) => w.tasks.length > 0);
-    }
-    if (step.num === DISCOVERY_REPORT_STEP) {
+    if (phaseNum === 5) {
       return Boolean(deliverableState.sessionCompleted);
     }
     return false;
   };
 
-  const getPhaseBadgeClasses = (phase: DiscoveryFlowPhaseGroup, isActive: boolean) => {
-    if (!isActive) {
-      return 'bg-slate-950/80 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200';
-    }
-    switch (phase) {
-      case 'mundo_simulado':
-        return 'bg-purple-500/15 text-purple-200 border-purple-500/50 ring-1 ring-purple-500/30';
-      case 'decodificacion':
-        return 'bg-cyan-500/15 text-cyan-200 border-cyan-500/50 ring-1 ring-cyan-500/30';
-      case 'mundo_real':
-        return 'bg-amber-500/15 text-amber-200 border-amber-500/50 ring-1 ring-amber-500/30';
-      default:
-        return 'bg-slate-800 text-slate-100 border-slate-600 ring-1 ring-slate-500/30';
-    }
-  };
-
-  const getStepButtonClasses = (
-    phase: DiscoveryFlowPhaseGroup,
-    isCurrent: boolean,
-    populated: boolean
-  ) => {
-    if (isCurrent) {
-      if (phase === 'mundo_simulado') {
-        return 'bg-purple-500 text-slate-950 font-bold shadow-md shadow-purple-950/40';
-      }
-      if (phase === 'decodificacion') {
-        return 'bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-950/40';
-      }
-      return 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-950/40';
-    }
-    if (populated) {
-      return 'bg-slate-900 text-emerald-300 border border-emerald-500/30 hover:border-emerald-400/50';
-    }
-    return 'bg-slate-900/60 text-slate-400 border border-slate-800 hover:text-slate-200 hover:border-slate-700';
-  };
-
   const completion = calculateDiscoveryCompletion(deliverableState);
-  const hasSavedProgress =
-    Boolean(deliverableState.sessionStarted) &&
-    (Boolean(deliverableState.challenge.currentSituation.trim()) ||
-      Boolean(deliverableState.challenge.criticalFriction.trim()) ||
-      Boolean(deliverableState.challenge.title.trim()));
-
   const activeTrack: DiscoveryTrackType = deliverableState.challenge.track || 'persona';
+  const currentPhaseDef =
+    DISCOVERY_FIVE_PHASES.find((p) => p.num === activeModule) || DISCOVERY_FIVE_PHASES[0];
 
   useEffect(() => {
     if (onSessionMetaChange) {
@@ -391,243 +509,375 @@ export default function DiscoveryPortal({
         completionPct: completion.percentage
       });
     }
-  }, [activeModule, viewingStartScreen, hasSavedProgress, completion.percentage, onSessionMetaChange]);
+  }, [
+    activeModule,
+    viewingStartScreen,
+    hasSavedProgress,
+    completion.percentage,
+    onSessionMetaChange
+  ]);
 
   // ==============================================================
-  // PANTALLA INICIAL COHERENTE CON INTERACTIVE DECOX
+  // PORTADA CEREMONIAL — CHALAMANDRA MAGISTRAL DECOX
   // ==============================================================
   if (viewingStartScreen) {
     return (
-      <div className="max-w-6xl mx-auto py-4 space-y-10 animate-fadeIn">
-        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-b from-slate-900 via-slate-950 to-slate-950 border border-amber-500/30 p-7 sm:p-12 shadow-2xl">
-          <div className="absolute -top-24 right-12 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-24 left-12 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="max-w-6xl mx-auto py-2 sm:py-4 space-y-10 animate-fadeIn">
+        <section className="relative overflow-hidden rounded-2xl chalamandra-surface-elevated p-6 sm:p-10 lg:p-12">
+          {/* Geometría simbólica de Chalamandra sobre obsidiana */}
+          <AlchemicalGeometryBackdrop className="absolute -right-24 -top-24 w-[480px] h-[480px] text-[#ECC964] opacity-[0.20]" />
 
-          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            <div className="lg:col-span-7 space-y-6">
-              <div className="flex items-center gap-3 text-xs font-mono text-amber-400">
-                <img
-                  src="/images/chalamandra-emblem.jpg"
-                  alt="Emblema Salamandra Chalamandra Magistral"
-                  referrerPolicy="no-referrer"
-                  className="w-8 h-8 rounded-xl object-cover ring-1 ring-amber-400/50"
-                />
-                <span>CHALAMANDRA MAGISTRAL · INTERACTIVE DECOX · SESIÓN DE DESCUBRIMIENTO</span>
-              </div>
+          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-stretch">
+            {/* Columna principal: Emblema oficial, Título, Explicación, Selector y Acciones */}
+            <div className="lg:col-span-7 flex flex-col justify-between space-y-7">
+              <div className="space-y-5">
+                {/* Emblema oficial de la Salamandra + firma */}
+                <div className="flex items-center gap-4">
+                  <ChalamandraMedallion size="xl" />
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-x-2 text-xs font-mono font-semibold text-[#ECC964]">
+                      <span>Chalamandra Magistral DecoX</span>
+                      <span aria-hidden="true" className="text-[#D4AF37]">·</span>
+                      <span className="text-[#FFF0BE]">Ecosistema Oficial</span>
+                    </div>
+                    <p className="text-xs sm:text-sm text-[#D6CFC2]">
+                      Alquimia cognitiva aplicada, decodificación de patrones y arquitectura estratégica
+                    </p>
+                  </div>
+                </div>
 
-              <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-100 tracking-tight leading-[1.12]">
-                Del Mundo Simulado al{' '}
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600">
-                  Mundo Real
-                </span>
-              </h1>
+                {/* Título exacto de la Portada */}
+                <h1 className="font-display text-3xl sm:text-4xl lg:text-[2.7rem] font-semibold text-[#FAF6ED] tracking-tight leading-[1.14] text-balance">
+                  Sesión de Descubrimiento{' '}
+                  <span className="chalamandra-gold-text">Interactive DecoX</span>
+                </h1>
 
-              <p className="text-sm sm:text-lg text-slate-300 leading-relaxed max-w-2xl">
-                Recorre paso a paso los <strong className="text-slate-100">7 módulos de razonamiento de Chalamandra</strong> (Scheherazade, Hermes, Carroll, Niño de 8 años, Hacker, Trickster y Data) estructurados entre{' '}
-                <strong className="text-slate-100">Mundo Simulado, Decodificación y Mundo Real</strong> para preparar tu síntesis de caso y el siguiente paso hacia la sesión en vivo.
-              </p>
+                {/* Explicación breve de la experiencia */}
+                <p className="text-sm sm:text-base text-[#DDD6C7] leading-relaxed max-w-2xl">
+                  Experiencia guiada en cinco fases para transformar un problema, bloqueo o iniciativa real en una ruta estratégica verificable. Distinguirás hechos de hipótesis, aplicarás{' '}
+                  <strong className="text-[#FFF0BE] font-semibold">
+                    un único Hack oficial con su plantilla metodológica
+                  </strong>
+                  , calibrarás la ejecución con <strong className="text-[#FFF0BE] font-semibold">SRAP</strong> y obtendrás tu informe ejecutivo en PDF/A4 y JSON.
+                </p>
 
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs font-mono text-slate-400">
-                <span className="text-slate-200">Encuadre</span>
-                <span aria-hidden="true">→</span>
-                <span className="text-purple-300">Mundo Simulado (4 módulos)</span>
-                <span aria-hidden="true">→</span>
-                <span className="text-cyan-300">Decodificación (3 módulos + lab)</span>
-                <span aria-hidden="true">→</span>
-                <span className="text-amber-300">Mundo Real y Sesión en Vivo</span>
-              </div>
+                {/* Selector Personas / Organizaciones */}
+                <div className="space-y-2.5 pt-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-[#F6DF96]">
+                      Selecciona el recorrido de tu sesión:
+                    </span>
+                    <span className="text-[11px] font-mono text-[#C4BCAD]">
+                      Adapta preguntas, ejemplos y criterios
+                    </span>
+                  </div>
 
-              {/* Dual Track Selector (Personas vs Organizaciones) */}
-              <div className="pt-1 space-y-2.5">
-                <span className="text-xs font-mono text-slate-300 uppercase tracking-wider block font-semibold">
-                  Selecciona tu recorrido metodológico:
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {DISCOVERY_TRACK_OPTIONS.map((tOpt) => {
-                    const isSelected = selectedStartTrack === tOpt.value;
-                    const TrackIcon = tOpt.value === 'organizacion' ? Building2 : User;
-                    return (
-                      <button
-                        key={tOpt.value}
-                        type="button"
-                        onClick={() => setSelectedStartTrack(tOpt.value)}
-                        className={`p-4 rounded-2xl border text-left transition-all cursor-pointer space-y-1.5 ${
-                          isSelected
-                            ? 'bg-amber-500/15 border-amber-500/60 ring-1 ring-amber-500/30'
-                            : 'bg-slate-950/75 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="flex items-center gap-2 text-xs font-bold text-slate-100">
-                            <TrackIcon
-                              className={`w-4 h-4 ${
-                                isSelected ? 'text-amber-400' : 'text-slate-400'
+                  <div
+                    role="radiogroup"
+                    aria-label="Seleccionar recorrido Personas u Organizaciones"
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-3.5"
+                  >
+                    {DISCOVERY_TRACK_OPTIONS.map((tOpt) => {
+                      const isSelected = selectedStartTrack === tOpt.value;
+                      const TrackIcon = tOpt.value === 'organizacion' ? Building2 : User;
+                      return (
+                        <button
+                          key={tOpt.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={isSelected}
+                          onClick={() => setSelectedStartTrack(tOpt.value)}
+                          className={`p-4 rounded-xl text-left cursor-pointer space-y-2 ${
+                            isSelected ? 'chalamandra-selector-active' : 'chalamandra-selector'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-2.5 text-sm font-display font-semibold text-[#FAF6ED] whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border ${
+                                  isSelected
+                                    ? 'bg-[#ECC964]/20 border-[#ECC964] text-[#FFF0BE]'
+                                    : 'bg-[#09080E] border-[#D4AF37]/30 text-[#D4AF37]'
+                                }`}
+                              >
+                                <TrackIcon className="w-4 h-4 shrink-0" />
+                              </span>
+                              <span>{tOpt.title}</span>
+                            </span>
+                            <span
+                              className={`text-[11px] font-mono whitespace-nowrap ${
+                                isSelected ? 'text-[#FFF0BE] font-semibold' : 'text-[#B8B0A0]'
                               }`}
-                            />
-                            {tOpt.title}
-                          </span>
-                          <span className="text-[11px] font-mono text-amber-400">
-                            {isSelected ? 'Activo' : 'Elegir'}
-                          </span>
-                        </div>
-                        <p className="text-[11px] font-semibold text-slate-300">{tOpt.subtitle}</p>
-                        <p className="text-[11px] text-slate-400 leading-snug">{tOpt.description}</p>
-                      </button>
-                    );
-                  })}
+                            >
+                              {isSelected ? '✓ Activo' : 'Seleccionar'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-[#D6CFC2] leading-relaxed">
+                            {tOpt.description}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              {/* Primary Start Actions */}
-              <div className="pt-2 flex flex-wrap items-center gap-3.5">
-                {hasSavedProgress ? (
-                  <>
-                    <button
-                      id="start-continue-session-btn"
-                      type="button"
-                      onClick={handleContinueSession}
-                      className="flex items-center gap-2.5 px-7 py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-extrabold text-sm shadow-xl shadow-amber-950/50 transition-all hover:scale-[1.02] cursor-pointer"
-                    >
-                      <Play className="w-4 h-4 fill-slate-950" />
-                      <span className="tabular-nums">
-                        Continuar Mi Sesión ({completion.percentage}% ·{' '}
-                        {activeTrack === 'organizacion' ? 'Organizaciones' : 'Personas'})
-                      </span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleStartFreshSession(selectedStartTrack)}
-                      className="flex items-center gap-2 px-5 py-4 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold transition-all cursor-pointer"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+              {/* Aviso de progreso resguardado + Botones principales */}
+              <div className="space-y-3.5 pt-2">
+                {hasSavedProgress && (
+                  <div className="p-3.5 rounded-xl chalamandra-surface-emerald flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="text-[#FAF6ED]">
+                      <span className="font-mono font-semibold text-emerald-300">
+                        Progreso guardado disponible:
+                      </span>{' '}
                       <span>
-                        Nueva Sesión en Blanco (
-                        {selectedStartTrack === 'organizacion' ? 'Organizaciones' : 'Personas'})
+                        {deliverableState.challenge.title.trim() ||
+                          `Recorrido ${activeTrack === 'organizacion' ? 'Organizaciones' : 'Personas'}`}{' '}
+                        · Fase 0{activeModule} ({completion.percentage}% completado)
                       </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleLoadReferenceCase(selectedStartTrack)}
-                      className="flex items-center gap-2 px-4 py-4 rounded-2xl bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-amber-300 text-xs font-semibold transition-all cursor-pointer"
-                    >
-                      <Layers className="w-3.5 h-3.5 text-amber-400" />
-                      <span>
-                        Ver Caso Demo (
-                        {selectedStartTrack === 'organizacion' ? 'Organizaciones' : 'Personas'})
-                      </span>
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      id="start-new-session-btn"
-                      type="button"
-                      onClick={() => handleStartFreshSession(selectedStartTrack)}
-                      className="flex items-center gap-2.5 px-7 py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-extrabold text-sm shadow-xl shadow-amber-950/50 transition-all hover:scale-[1.02] cursor-pointer"
-                    >
-                      <Play className="w-4 h-4 fill-slate-950" />
-                      <span>
-                        Iniciar Recorrido{' '}
-                        {selectedStartTrack === 'organizacion' ? 'Organizaciones' : 'Personas'}
-                      </span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      id="load-demo-case-btn"
-                      type="button"
-                      onClick={() => handleLoadReferenceCase(selectedStartTrack)}
-                      className="flex items-center gap-2 px-5 py-4 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-slate-200 hover:text-amber-300 text-xs font-semibold transition-all cursor-pointer"
-                    >
-                      <Layers className="w-4 h-4 text-amber-400" />
-                      <span>
-                        Explorar Caso Demo (
-                        {selectedStartTrack === 'organizacion' ? 'Organizaciones' : 'Personas'})
-                      </span>
-                    </button>
-                  </>
+                    </div>
+                    <span className="font-mono text-[11px] text-emerald-200/90 tabular-nums">
+                      {deliverableState.sessionId}
+                    </span>
+                  </div>
                 )}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  {hasSavedProgress ? (
+                    <>
+                      <button
+                        id="start-continue-session-btn"
+                        type="button"
+                        onClick={handleContinueSession}
+                        className="flex items-center gap-2.5 px-7 py-3.5 rounded-xl chalamandra-btn-primary font-bold text-sm cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        <Play className="w-4 h-4 fill-[#08070B] shrink-0" />
+                        <span className="tabular-nums">
+                          Continuar sesión (Fase 0{activeModule} · {completion.percentage}%)
+                        </span>
+                        <ArrowRight className="w-4 h-4 shrink-0" />
+                      </button>
+
+                      {!confirmCoverNewSession ? (
+                        <button
+                          id="start-new-session-btn"
+                          type="button"
+                          onClick={() => setConfirmCoverNewSession(true)}
+                          className="flex items-center gap-2 px-5 py-3.5 rounded-xl chalamandra-btn-secondary text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-[#ECC964] shrink-0" />
+                          <span>Comenzar sesión nueva</span>
+                        </button>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl chalamandra-surface-rose text-xs">
+                          <span className="text-rose-100 font-medium px-1">
+                            ¿Abrir Fase 01 en blanco y reemplazar el borrador actual?
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleStartFreshSession(selectedStartTrack)}
+                            className="px-3 py-1.5 rounded-lg chalamandra-btn-primary font-bold cursor-pointer whitespace-nowrap"
+                          >
+                            Comenzar sesión
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmCoverNewSession(false)}
+                            className="px-3 py-1.5 rounded-lg chalamandra-btn-secondary font-semibold cursor-pointer whitespace-nowrap"
+                          >
+                            Conservar avance
+                          </button>
+                        </div>
+                      )}
+
+                      <button
+                        id="load-demo-case-btn"
+                        type="button"
+                        onClick={() => handleLoadReferenceCase(selectedStartTrack)}
+                        className="flex items-center gap-2 px-4 py-3.5 rounded-xl chalamandra-selector text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        <Layers className="w-3.5 h-3.5 text-[#ECC964] shrink-0" />
+                        <span>
+                          Caso demostrativo (
+                          {selectedStartTrack === 'organizacion' ? 'Organizaciones' : 'Personas'})
+                        </span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        id="start-new-session-btn"
+                        type="button"
+                        onClick={() => handleStartFreshSession(selectedStartTrack)}
+                        className="flex items-center gap-2.5 px-7 py-3.5 rounded-xl chalamandra-btn-primary font-bold text-sm cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        <Play className="w-4 h-4 fill-[#08070B] shrink-0" />
+                        <span>Comenzar sesión</span>
+                        <ArrowRight className="w-4 h-4 shrink-0" />
+                      </button>
+
+                      <button
+                        id="load-demo-case-btn"
+                        type="button"
+                        onClick={() => handleLoadReferenceCase(selectedStartTrack)}
+                        className="flex items-center gap-2 px-5 py-3.5 rounded-xl chalamandra-btn-secondary text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        <Layers className="w-4 h-4 text-[#ECC964] shrink-0" />
+                        <span>
+                          Ver caso demostrativo (
+                          {selectedStartTrack === 'organizacion' ? 'Organizaciones' : 'Personas'})
+                        </span>
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="lg:col-span-5 space-y-4">
-              <div className="relative rounded-2xl overflow-hidden border border-amber-500/30 shadow-2xl">
-                <img
-                  src={sessionVisual}
-                  alt="Escena de Sesión de Descubrimiento Chalamandra Magistral DecoX"
-                  referrerPolicy="no-referrer"
-                  className="w-full h-64 sm:h-72 object-cover object-center"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent pointer-events-none" />
-                <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-xs font-mono text-amber-300">
-                  <span>Mesa Metodológica DecoX</span>
-                  <span className="text-slate-300">7 Módulos · 3 Mundos</span>
+            {/* Columna visual: Imagen Hero oficial de la mesa estratégica + Cámara de rigor */}
+            <div className="lg:col-span-5 flex flex-col justify-between gap-4">
+              <div className="relative flex-1 min-h-[270px] rounded-xl overflow-hidden border border-[#ECC964]/55 bg-[#09080E] shadow-[0_18px_40px_-16px_rgba(0,0,0,0.9),0_0_32px_-12px_rgba(212,175,55,0.28)]">
+                {!heroImgFailed ? (
+                  <img
+                    src={sessionVisual}
+                    alt="Mesa estratégica iluminada Chalamandra Magistral DecoX con sello de salamandra"
+                    referrerPolicy="no-referrer"
+                    onError={() => setHeroImgFailed(true)}
+                    className="w-full h-full min-h-[270px] object-cover object-center"
+                  />
+                ) : (
+                  <div className="w-full h-full min-h-[270px] flex flex-col items-center justify-center p-6 text-center bg-[radial-gradient(circle_at_center,rgba(212,175,55,0.22),#09080E_72%)]">
+                    <ChalamandraMedallion size="xl" />
+                    <span className="mt-3 font-display text-sm text-[#FFF0BE]">
+                      Chalamandra Magistral DecoX
+                    </span>
+                  </div>
+                )}
+                <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#07060A] via-[#07060A]/75 to-transparent pointer-events-none" />
+                <div className="absolute bottom-3.5 left-4 right-4 flex items-center justify-between gap-2 text-xs font-mono">
+                  <span className="text-[#FFF0BE] font-semibold">
+                    Recorrido {selectedStartTrack === 'organizacion' ? 'Organizaciones' : 'Personas'}
+                  </span>
+                  <span className="text-[#ECC964] tabular-nums">5 Fases · 1 Hack · SRAP</span>
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950/85 border border-slate-800 space-y-1.5 text-xs">
-                <span className="font-mono text-amber-400 font-semibold block">
-                  Regla Epistémica y Ética Chalamandra
-                </span>
-                <p className="text-slate-400 leading-relaxed">
-                  Hackear un sistema significa encontrar ventajas legítimas dentro de las reglas; nunca engañar personas ni presentar correlaciones como causalidad demostrada. Esta herramienta prepara el diagnóstico previo a la sesión en vivo (valor de referencia del ecosistema: USD 27; sin cobro configurado en esta aplicación).
+              <div className="p-4 rounded-xl chalamandra-surface-cyan space-y-1.5 text-xs">
+                <div className="flex items-center justify-between gap-2 font-mono text-cyan-200 font-semibold">
+                  <span>Rigor epistémico y resguardo local</span>
+                  <span className="text-[#FFF0BE] text-[11px]">Aislamiento por sesión</span>
+                </div>
+                <p className="text-[#D6CFC2] leading-relaxed">
+                  El test de arquetipo es opcional y opera siempre como hipótesis revisable, nunca como etiqueta fija. Tus respuestas se guardan localmente en este navegador sin exponerse en la URL.
                 </p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Architecture Preview Strip — Fase A (Mundo Simulado) -> Fase B (Decodificación) -> Fase C (Mundo Real) */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {MUNDO_PHASES_OVERVIEW.map((phase, index) => {
-            const accentColor =
-              index === 0
-                ? 'text-purple-300'
-                : index === 1
-                ? 'text-cyan-300'
-                : 'text-amber-400';
-            return (
-              <div
-                key={phase.id}
-                className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2.5"
+        <AlchemicalHairline />
+
+        {/* Vista previa visual del recorrido de las cinco fases */}
+        <section aria-labelledby="five-phases-preview-heading" className="space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+            <div>
+              <span className="text-xs font-mono font-semibold text-[#ECC964]">
+                Vista previa del viaje estratégico
+              </span>
+              <h2
+                id="five-phases-preview-heading"
+                className="font-display text-xl sm:text-2xl font-semibold text-[#FAF6ED] mt-0.5"
               >
-                <span className={`text-xs font-mono ${accentColor} font-bold block`}>
-                  {phase.title}
-                </span>
-                <h3 className="text-sm font-bold text-slate-100">{phase.subtitle}</h3>
-                <p className="text-[11px] font-mono text-slate-300">{phase.hacksSummary}</p>
-                <p className="text-xs text-slate-400 leading-relaxed">{phase.description}</p>
-              </div>
-            );
-          })}
+                Arquitectura conectada de las cinco fases DecoX
+              </h2>
+            </div>
+            <span className="text-xs font-mono text-[#C4BCAD]">
+              De la exploración de hechos a tu Ruta Inicial exportable
+            </span>
+          </div>
+
+          <div className="relative">
+            {/* Hilo conductor dorado en escritorio */}
+            <div
+              aria-hidden="true"
+              className="hidden lg:block absolute top-9 left-10 right-10 h-[2px] bg-gradient-to-r from-[#D4AF37]/30 via-[#ECC964]/75 to-[#34D399]/55 pointer-events-none"
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 relative z-10">
+              {DISCOVERY_FIVE_PHASES.map((phase) => {
+                const PhaseIcon = getPhaseIconComponent(phase.id);
+                const accents = getPhaseAccentClasses(phase.id);
+                const isSavedStep = hasSavedProgress && activeModule === phase.num;
+
+                return (
+                  <div
+                    key={phase.id}
+                    className={`p-5 rounded-xl flex flex-col justify-between space-y-4 ${
+                      isSavedStep ? 'chalamandra-surface-elevated' : 'chalamandra-surface'
+                    }`}
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border text-xs font-mono font-bold tabular-nums ${accents.badge}`}
+                        >
+                          {phase.code}
+                        </span>
+                        <PhaseIcon className={`w-4 h-4 shrink-0 ${accents.icon}`} />
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="block text-[11px] font-mono text-[#ECC964]">
+                          {accents.kicker}
+                        </span>
+                        <h3 className="font-display text-sm sm:text-base font-semibold text-[#FAF6ED]">
+                          {phase.shortLabel}
+                        </h3>
+                      </div>
+
+                      <p className="text-xs text-[#D6CFC2] leading-relaxed">
+                        {phase.purpose}
+                      </p>
+                    </div>
+
+                    <div className="pt-2.5 border-t border-[#D4AF37]/20 flex items-center justify-between text-[11px] font-mono text-[#B8B0A0]">
+                      <span>Fase {phase.code}</span>
+                      {isSavedStep ? (
+                        <span className="text-emerald-300 font-semibold">En curso</span>
+                      ) : isPhasePopulated(phase.num) && hasSavedProgress ? (
+                        <span className="text-emerald-300">Completada</span>
+                      ) : (
+                        <span className="text-[#ECC964]/90">Guiada</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </section>
       </div>
     );
   }
 
   // ==============================================================
-  // ENTORNO ACTIVO DE LA SESIÓN DE DESCUBRIMIENTO (FLUJO ESTRUCTURADO)
+  // FLUJO ACTIVO DE 5 FASES — RIEL CONDUCTOR DORADO
   // ==============================================================
   return (
-    <div className="max-w-6xl mx-auto space-y-6 py-2">
+    <div className="max-w-6xl mx-auto space-y-7 py-1">
       {deliverableState.isDemoCase && (
         <div
           role="status"
-          className="no-print px-5 py-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+          className="no-print px-5 py-3.5 rounded-xl chalamandra-surface-elevated flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
         >
-          <div className="flex items-center gap-2.5 text-amber-200">
-            <Layers className="w-4 h-4 text-amber-400 shrink-0" />
+          <div className="flex items-center gap-2.5 text-[#FFF0BE]">
+            <Layers className="w-4 h-4 text-[#ECC964] shrink-0" />
             <span>
-              <strong className="font-mono text-amber-300">CASO DE REFERENCIA DEMOSTRATIVO:</strong>{' '}
-              Explorando recorrido{' '}
+              <strong className="font-mono text-[#ECC964]">CASO DEMOSTRATIVO:</strong> Recorrido{' '}
               <strong>{activeTrack === 'organizacion' ? 'Organizaciones' : 'Personas'}</strong> (
-              {deliverableState.sessionId}). Esta demostración está aislada de tus sesiones reales.
+              <span className="font-mono">{deliverableState.sessionId}</span>). Aislado de tus sesiones propias.
             </span>
           </div>
-          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={() =>
@@ -635,73 +885,53 @@ export default function DiscoveryPortal({
                   activeTrack === 'organizacion' ? 'persona' : 'organizacion'
                 )
               }
-              className="px-3 py-2 rounded-xl bg-slate-950/90 hover:bg-slate-900 border border-amber-500/35 text-amber-200 font-semibold whitespace-nowrap cursor-pointer transition-colors"
+              className="px-3 py-1.5 rounded-lg chalamandra-btn-secondary font-semibold cursor-pointer whitespace-nowrap"
             >
-              Cambiar a Demo {activeTrack === 'organizacion' ? 'Personas' : 'Organizaciones'}
+              Ver demo {activeTrack === 'organizacion' ? 'Personas' : 'Organizaciones'}
             </button>
             <button
               type="button"
               onClick={() => handleStartFreshSession(activeTrack)}
-              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold whitespace-nowrap cursor-pointer transition-colors"
+              className="px-3.5 py-1.5 rounded-lg chalamandra-btn-primary font-bold cursor-pointer whitespace-nowrap"
             >
-              Iniciar Mi Sesión Real en Blanco
+              Comenzar mi caso real
             </button>
           </div>
         </div>
       )}
 
-      <section className="no-print rounded-3xl bg-slate-900/95 border border-amber-500/25 shadow-xl overflow-hidden">
-        {/* Top Session Status & Controls */}
-        <div className="px-5 sm:px-6 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80">
-          <div className="flex items-center gap-3.5">
-            <img
-              src="/images/chalamandra-emblem.jpg"
-              alt="Logo Salamandra Chalamandra Magistral"
-              referrerPolicy="no-referrer"
-              className="w-10 h-10 rounded-xl object-cover ring-1 ring-amber-400/50 shrink-0"
-            />
-            <div>
-              <div className="flex flex-wrap items-center gap-x-2 text-[11px] font-mono text-amber-400">
-                <span>
+      {/* Cabecera unificada y Riel Conductor de las 5 Fases */}
+      <section className="no-print rounded-2xl chalamandra-surface-elevated overflow-hidden">
+        <div className="px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#D4AF37]/30">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <ChalamandraMedallion size="md" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 text-[11px] font-mono text-[#ECC964]">
+                <span className="font-semibold">
                   {activeTrack === 'organizacion'
-                    ? 'RECORRIDO ORGANIZACIONES'
-                    : 'RECORRIDO PERSONAS'}
+                    ? 'Recorrido Organizaciones'
+                    : 'Recorrido Personas'}
                 </span>
-                <span aria-hidden="true">·</span>
-                <span
-                  className={
-                    currentStepDef.phase === 'mundo_simulado'
-                      ? 'text-purple-300'
-                      : currentStepDef.phase === 'decodificacion'
-                      ? 'text-cyan-300'
-                      : 'text-amber-300'
-                  }
-                >
-                  {currentStepDef.phaseTitle}
-                </span>
-                <span aria-hidden="true">·</span>
-                <span className="text-slate-400">
-                  {deliverableState.challenge.explorationFocus || 'Exploración'}
-                </span>
+                <span aria-hidden="true" className="text-[#D4AF37]">·</span>
+                <span className="text-[#FFF0BE]">{currentPhaseDef.phaseTitle}</span>
               </div>
-              <h1 className="text-base sm:text-lg font-extrabold text-slate-100 tracking-tight">
+              <h1 className="font-display text-base sm:text-lg font-semibold text-[#FAF6ED] tracking-wide truncate">
                 {deliverableState.challenge.title.trim() ||
-                  'Mesa Interactiva Chalamandra Magistral · DecoX'}
+                  'Sesión de Descubrimiento Interactive DecoX'}
               </h1>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Real Completion Progress */}
-            <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono tabular-nums">
-              <span className="text-slate-400">
-                Paso {String(activeModule).padStart(2, '0')}/{TOTAL_DISCOVERY_STEPS} · Avance{' '}
-                {completion.percentage}%
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg chalamandra-chamber text-xs font-mono tabular-nums">
+              <span className="text-[#DDD6C7]">
+                Fase {activeModule}/{TOTAL_DISCOVERY_STEPS} ·{' '}
+                <span className="text-[#FFF0BE] font-semibold">{completion.percentage}%</span>
               </span>
-              <div className="w-16 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div className="w-16 h-2 rounded-sm bg-[#1A1726] overflow-hidden border border-[#D4AF37]/25">
                 <div
-                  className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-300"
-                  style={{ width: `${completion.percentage}%` }}
+                  className="h-full bg-gradient-to-r from-[#B98519] via-[#ECC964] to-[#FFF0BE] transition-all duration-300"
+                  style={{ width: `${Math.max(6, completion.percentage)}%` }}
                 />
               </div>
             </div>
@@ -709,58 +939,60 @@ export default function DiscoveryPortal({
             <button
               type="button"
               onClick={() => saveToServer()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 hover:border-amber-500/40 cursor-pointer transition-colors"
-              title="Tu avance se guarda automáticamente en este navegador (sin sincronización automática entre dispositivos). Pulsa para respaldar también en la memoria temporal del servidor durante la ejecución actual."
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg chalamandra-chamber text-xs font-mono text-[#DDD6C7] hover:border-[#ECC964] cursor-pointer transition-colors whitespace-nowrap"
+              title="Guardado automático en este navegador; pulsa para respaldar en la memoria temporal del servidor."
             >
               <Cloud
-                className={`w-3.5 h-3.5 ${
+                className={`w-3.5 h-3.5 shrink-0 ${
                   syncStatus === 'synced'
                     ? 'text-emerald-400'
                     : syncStatus === 'saving'
-                    ? 'text-cyan-400'
-                    : 'text-amber-400'
+                    ? 'text-[#ECC964]'
+                    : 'text-[#B8B0A0]'
                 }`}
               />
               <span>
                 {syncStatus === 'saving'
-                  ? 'Sincronizando...'
+                  ? 'Guardando...'
                   : syncStatus === 'error'
-                  ? 'Guardado local (este navegador)'
-                  : 'Guardado en navegador'}
+                  ? 'Local (navegador)'
+                  : 'Guardado local'}
               </span>
             </button>
 
             <button
               type="button"
               onClick={() => setViewingStartScreen(true)}
-              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-850 border border-slate-800 text-xs text-slate-300 cursor-pointer transition-colors"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg chalamandra-btn-secondary text-xs font-semibold cursor-pointer whitespace-nowrap"
             >
-              Pantalla Inicial
+              <Home className="w-3.5 h-3.5 text-[#ECC964] shrink-0" />
+              <span>Portada</span>
             </button>
 
             {!confirmReset ? (
               <button
                 type="button"
                 onClick={() => setConfirmReset(true)}
-                className="p-2 rounded-xl bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-400 hover:text-rose-400 cursor-pointer transition-colors"
+                className="p-2 rounded-lg chalamandra-chamber text-[#C4BCAD] hover:text-rose-300 hover:border-rose-400/60 cursor-pointer transition-colors"
                 title="Reiniciar sesión en blanco"
+                aria-label="Reiniciar sesión en blanco"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
             ) : (
-              <div className="flex items-center gap-1.5 bg-rose-950/40 border border-rose-500/40 px-2.5 py-1 rounded-xl text-xs">
-                <span className="text-rose-200 font-mono">¿Limpiar todo?</span>
+              <div className="flex items-center gap-1.5 chalamandra-surface-rose px-2.5 py-1 rounded-lg text-xs">
+                <span className="text-rose-100 font-mono">¿Reiniciar?</span>
                 <button
                   type="button"
                   onClick={() => handleStartFreshSession(activeTrack)}
-                  className="px-2 py-0.5 rounded bg-rose-500 text-slate-950 font-bold cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-rose-400 text-[#08070B] font-bold cursor-pointer"
                 >
                   Sí
                 </button>
                 <button
                   type="button"
                   onClick={() => setConfirmReset(false)}
-                  className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-[#1A1726] text-[#FAF6ED] cursor-pointer"
                 >
                   No
                 </button>
@@ -769,135 +1001,62 @@ export default function DiscoveryPortal({
           </div>
         </div>
 
-        {/* Tier 1: Methodological Phase Selector (Encuadre | Mundo Simulado | Decodificación | Mundo Real) + SRAP Tools */}
-        <div className="px-4 sm:px-6 py-2.5 bg-slate-950/60 border-b border-slate-800/80 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+        {/* Riel Conductor de las 5 Fases Conectadas */}
+        <div
+          role="tablist"
+          aria-label="Cinco fases de la Sesión de Descubrimiento"
+          className="relative px-4 sm:px-5 py-4 bg-[#0B0A11]/95"
+        >
+          {/* Línea conductora dorada detrás de las pestañas */}
           <div
-            role="tablist"
-            aria-label="Fases metodológicas de la Sesión de Descubrimiento"
-            className="flex items-center gap-2 overflow-x-auto scrollbar-none py-0.5"
-          >
-            {DISCOVERY_PHASE_GROUPS.map((group) => {
-              const isActivePhase = currentStepDef.phase === group.id;
-              const groupSteps = DISCOVERY_FLOW_STEPS.filter((s) => s.phase === group.id);
-              const populatedCount = groupSteps.filter((s) => isStepPopulated(s.num)).length;
+            aria-hidden="true"
+            className="hidden sm:block absolute top-1/2 left-10 right-10 -translate-y-1/2 h-[2px] bg-gradient-to-r from-[#D4AF37]/30 via-[#ECC964]/65 to-[#34D399]/45 pointer-events-none"
+          />
+
+          <div className="relative z-10 grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            {DISCOVERY_FIVE_PHASES.map((phase) => {
+              const Icon = getPhaseIconComponent(phase.id);
+              const isCurrent = activeModule === phase.num;
+              const populated = isPhasePopulated(phase.num);
 
               return (
                 <button
-                  key={group.id}
+                  key={phase.id}
                   type="button"
                   role="tab"
-                  aria-selected={isActivePhase}
-                  onClick={() => setActiveModule(group.startStep)}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-medium whitespace-nowrap shrink-0 transition-all cursor-pointer tabular-nums ${getPhaseBadgeClasses(
-                    group.id,
-                    isActivePhase
-                  )}`}
+                  aria-selected={isCurrent}
+                  onClick={() => setActiveModule(phase.num)}
+                  className={`flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl text-xs cursor-pointer text-left ${
+                    isCurrent
+                      ? 'chalamandra-btn-primary font-bold'
+                      : populated
+                      ? 'chalamandra-selector-emerald font-medium'
+                      : 'chalamandra-selector'
+                  }`}
                 >
-                  <span className="font-mono text-[10px] opacity-80">{group.code}</span>
-                  <span className="font-semibold">{group.shortTitle}</span>
-                  <span className="font-mono text-[10px] opacity-75">
-                    ({populatedCount}/{groupSteps.length})
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="hidden md:flex items-center gap-2 text-[11px] font-mono text-slate-400 shrink-0">
-            <span>Apoyo SRAP:</span>
-            <button
-              type="button"
-              onClick={() => setActiveView('oraculo')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-purple-300 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Bot className="w-3 h-3 text-purple-400" />
-              <span>Oráculo</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView('metronome')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-300 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Zap className="w-3 h-3 text-cyan-400" />
-              <span>Metrónomo</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView('matrix-3d')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-cyan-300 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Box className="w-3 h-3 text-cyan-400" />
-              <span>3D</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView('image-studio')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-amber-300 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Sparkles className="w-3 h-3 text-amber-400" />
-              <span>Visual</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Tier 2: Structured Flow Steps (including all 7 reasoning modules grouped by Mundo Simulado, Decodificación & Mundo Real) */}
-        <div className="px-4 sm:px-6 py-3 bg-slate-950/90 overflow-x-auto scrollbar-none">
-          <div className="flex items-center gap-1.5 min-w-max">
-            {DISCOVERY_FLOW_STEPS.map((step, idx) => {
-              const Icon = getStepIconComponent(step.id);
-              const isCurrent = activeModule === step.num;
-              const populated = isStepPopulated(step.num);
-              const prevPhase = idx > 0 ? DISCOVERY_FLOW_STEPS[idx - 1].phase : step.phase;
-              const showPhaseSeparator = idx > 0 && prevPhase !== step.phase;
-
-              return (
-                <React.Fragment key={step.id}>
-                  {showPhaseSeparator && (
-                    <span
-                      aria-hidden="true"
-                      className="mx-1 h-5 w-px bg-slate-800 shrink-0"
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setActiveModule(step.num)}
-                    aria-current={isCurrent ? 'step' : undefined}
-                    title={`${step.phaseTitle} — ${step.shortLabel}`}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs whitespace-nowrap shrink-0 transition-all cursor-pointer tabular-nums ${getStepButtonClasses(
-                      step.phase,
-                      isCurrent,
-                      populated
-                    )}`}
-                  >
+                  <span className="flex items-center gap-2 min-w-0">
                     <Icon
                       className={`w-3.5 h-3.5 shrink-0 ${
                         isCurrent
-                          ? 'text-slate-950'
+                          ? 'text-[#08070B]'
                           : populated
-                          ? 'text-emerald-400'
-                          : step.phase === 'mundo_simulado'
-                          ? 'text-purple-400'
-                          : step.phase === 'decodificacion'
-                          ? 'text-cyan-400'
-                          : 'text-amber-400'
+                          ? 'text-emerald-300'
+                          : 'text-[#ECC964]'
                       }`}
                     />
-                    <span className="font-mono text-[10px] opacity-80">
-                      {String(step.num).padStart(2, '0')}.
-                    </span>
-                    <span>{step.shortLabel}</span>
-                    {!isCurrent && populated && (
-                      <Check className="w-3 h-3 text-emerald-400 shrink-0" />
-                    )}
-                  </button>
-                </React.Fragment>
+                    <span className="truncate tabular-nums">{phase.navLabel}</span>
+                  </span>
+                  {!isCurrent && populated && (
+                    <Check className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                  )}
+                </button>
               );
             })}
           </div>
         </div>
       </section>
 
-      {/* Active Interactive Step */}
+      {/* Fase Activa */}
       <div className="min-h-[520px]">
         {activeModule === 1 && (
           <Module01Challenge
@@ -917,117 +1076,51 @@ export default function DiscoveryPortal({
           />
         )}
 
-        {currentStepDef.hackId !== undefined && (
+        {activeModule === 3 && (
           <Module03SevenHacks
             challenge={deliverableState.challenge}
             profile={deliverableState.strategicProfile}
-            selectedHackIds={deliverableState.selectedHackIds}
-            hackNotes={deliverableState.hackNotes}
-            focusedHackId={currentStepDef.hackId}
-            stepNumber={activeModule}
-            totalSteps={TOTAL_DISCOVERY_STEPS}
-            prevStepLabel={
-              prevStepDef
-                ? `Volver a ${prevStepDef.shortLabel}`
-                : 'Volver al paso anterior'
-            }
-            nextStepLabel={
-              nextStepDef
-                ? nextStepDef.phase !== currentStepDef.phase
-                  ? `Pasar a ${
-                      nextStepDef.phase === 'decodificacion'
-                        ? 'Decodificación'
-                        : 'Mundo Real'
-                    }: ${nextStepDef.shortLabel}`
-                  : `Continuar a ${nextStepDef.shortLabel}`
-                : 'Continuar'
-            }
-            onSelectHackStep={(hackId) => {
-              const targetStep = STEP_NUM_BY_HACK_ID[hackId];
-              if (targetStep) setActiveModule(targetStep);
-            }}
-            onToggleHack={(id) => {
-              const current = deliverableState.selectedHackIds;
-              const next = current.includes(id)
-                ? current.filter((x) => x !== id)
-                : [...current, id];
-              updateUpstreamState({ selectedHackIds: next });
-            }}
-            onApplyRecommended={(ids) => updateUpstreamState({ selectedHackIds: ids })}
-            onUpdateNote={(id, note) => {
-              updateUpstreamState({
-                hackNotes: { ...deliverableState.hackNotes, [id]: note }
-              });
-            }}
-            onPrev={() => setActiveModule(Math.max(1, activeModule - 1))}
-            onNext={() => setActiveModule(Math.min(TOTAL_DISCOVERY_STEPS, activeModule + 1))}
+            selectedHackId={deliverableState.selectedHackId}
+            hackPlantillaResponses={deliverableState.hackPlantillaResponses}
+            powerLens={deliverableState.powerLens}
+            onSelectHack={handleSelectSingleHack}
+            onUpdatePlantillaField={handleUpdatePlantillaField}
+            onUpdatePowerLens={handleUpdatePowerLens}
+            onPrev={() => setActiveModule(2)}
+            onNext={() => setActiveModule(4)}
           />
         )}
 
-        {activeModule === DISCOVERY_EXPERIMENTS_STEP && (
-          <Module04LabExperiments
-            fullState={deliverableState}
-            experiments={deliverableState.experiments}
-            selectedHackIds={deliverableState.selectedHackIds}
-            onChange={(updated) => updateUpstreamState({ experiments: updated })}
-            onPrev={() => setActiveModule(DISCOVERY_EXPERIMENTS_STEP - 1)}
-            onNext={() => setActiveModule(DISCOVERY_SYNTHESIS_STEP)}
+        {activeModule === 4 && (
+          <Module04SrapOrientation
+            state={deliverableState}
+            onChangeSrap={handleUpdateSrap}
+            onChangeActionPlan={handleUpdateActionPlan}
+            onPrev={() => setActiveModule(3)}
+            onNext={() => setActiveModule(5)}
           />
         )}
 
-        {activeModule === DISCOVERY_SYNTHESIS_STEP && (
-          <Module05StrategicMap
-            fullState={deliverableState}
-            visualUrl={sessionVisual}
-            onOpenVisualStudio={() => setActiveView('image-studio')}
-            onApplySynthesis={(updatedMap: StrategicMapData, recommendedPlan?: ActionPlanWeek[]) => {
-              setDeliverableState((prev) => ({
-                ...prev,
-                sessionStarted: true,
-                planNeedsSync: recommendedPlan ? false : prev.planNeedsSync,
-                strategicMap: updatedMap,
-                actionPlan: recommendedPlan || prev.actionPlan
-              }));
-            }}
-            onChangeMap={(updatedMap) =>
-              setDeliverableState((prev) => ({ ...prev, strategicMap: updatedMap }))
-            }
-            onJumpToModule={(num) => setActiveModule(clampModuleStep(num))}
-            onPrev={() => setActiveModule(DISCOVERY_EXPERIMENTS_STEP)}
-            onNext={() => setActiveModule(DISCOVERY_PLAN_STEP)}
-            onOpenReport={() => setActiveModule(DISCOVERY_REPORT_STEP)}
-          />
-        )}
-
-        {activeModule === DISCOVERY_PLAN_STEP && (
-          <Module06ActionPlan
-            fullState={deliverableState}
-            actionPlan={deliverableState.actionPlan}
-            onChange={(updated, clearSyncFlag) =>
-              setDeliverableState((prev) => ({
-                ...prev,
-                actionPlan: updated,
-                planNeedsSync: clearSyncFlag ? false : prev.planNeedsSync
-              }))
-            }
-            onPrev={() => setActiveModule(DISCOVERY_SYNTHESIS_STEP)}
-            onNext={() => setActiveModule(DISCOVERY_REPORT_STEP)}
-          />
-        )}
-
-        {activeModule === DISCOVERY_REPORT_STEP && (
+        {activeModule === 5 && (
           <Module07ExecutiveReport
             state={deliverableState}
             onSaveServer={saveToServer}
             onMarkCompleted={() =>
               setDeliverableState((prev) => ({ ...prev, sessionCompleted: true }))
             }
-            onPrev={() => setActiveModule(DISCOVERY_PLAN_STEP)}
-            onJumpToModule={(num) => setActiveModule(clampModuleStep(num))}
+            onApplySynthesis={(updatedMap, updatedPlan) =>
+              setDeliverableState((prev) => ({
+                ...prev,
+                strategicMap: updatedMap,
+                actionPlan: updatedPlan,
+                planNeedsSync: false
+              }))
+            }
+            onPrev={() => setActiveModule(4)}
+            onJumpToModule={(num) => setActiveModule(clampPhaseStep(num))}
           />
         )}
       </div>
     </div>
   );
 }
-

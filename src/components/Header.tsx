@@ -1,11 +1,11 @@
 import React from 'react';
-import { FileText } from 'lucide-react';
+import { FileText, Compass, Play } from 'lucide-react';
 import { ActiveView } from '../types';
 import {
-  DISCOVERY_PHASE_GROUPS,
+  DISCOVERY_FIVE_PHASES,
   DISCOVERY_REPORT_STEP
 } from '../data/discoveryFlowConfig';
-import ThemeToggle from './ThemeToggle';
+import { ChalamandraMedallion } from './ChalamandraSeal';
 
 interface HeaderProps {
   activeView: ActiveView;
@@ -15,8 +15,7 @@ interface HeaderProps {
   completionPct: number;
   onSelectModule: (moduleNum: number) => void;
   onOpenStartScreen: () => void;
-  darkMode: boolean;
-  setDarkMode: (dark: boolean) => void;
+  onContinueSession: () => void;
 }
 
 export default function Header({
@@ -27,129 +26,132 @@ export default function Header({
   completionPct,
   onSelectModule,
   onOpenStartScreen,
-  darkMode,
-  setDarkMode
+  onContinueSession
 }: HeaderProps) {
   return (
-    <header className="no-print sticky top-0 z-40 backdrop-blur-md bg-slate-950/90 border-b border-slate-800 transition-colors">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        {/* Brand Identity */}
+    <header className="site-header no-print sticky top-0 z-40 backdrop-blur-xl bg-[#09080E]/92 border-b border-[#D4AF37]/38 shadow-[0_10px_30px_-14px_rgba(0,0,0,0.85)]">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-6">
+        {/* Zona 1: Emblema oficial + Wordmark */}
         <button
           type="button"
           onClick={onOpenStartScreen}
-          className="flex items-center gap-3 text-left cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xl shrink-0"
+          className="flex items-center gap-3 text-left cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ECC964] rounded-lg whitespace-nowrap shrink-0"
+          title="Ir a la Portada de la Sesión de Descubrimiento"
         >
-          <img
-            src="/images/chalamandra-emblem.jpg"
-            alt="Emblema Salamandra Chalamandra Magistral DecoX"
-            referrerPolicy="no-referrer"
-            className="w-9 h-9 rounded-lg object-cover ring-1 ring-amber-500/40 shrink-0"
-          />
-          <div>
-            <div className="flex items-center gap-1.5 text-sm font-bold text-slate-100 tracking-tight whitespace-nowrap">
-              <span>Chalamandra Magistral</span>
-              <span className="text-amber-400 font-mono text-xs font-semibold">DecoX</span>
-            </div>
-            <div className="text-xs text-slate-400 whitespace-nowrap">Sesión de Descubrimiento</div>
-          </div>
+          <ChalamandraMedallion size="md" />
+          <span className="font-display text-sm sm:text-base font-semibold tracking-wide text-[#F7F3EA] group-hover:text-[#FFF0BE] transition-colors whitespace-nowrap shrink-0">
+            Chalamandra Magistral <span className="text-[#ECC964]">DecoX</span>
+          </span>
         </button>
 
-        {/* Desktop Methodological World Navigation */}
+        {/* Zona 2: Navegación tipográfica limpia de las 5 Fases */}
         <nav
-          aria-label="Fases de la Sesión de Descubrimiento"
-          className="hidden lg:flex items-center gap-1.5"
+          aria-label="Cinco fases de la Sesión de Descubrimiento"
+          className="hidden lg:flex items-center gap-5"
         >
-          {DISCOVERY_PHASE_GROUPS.map((phase) => {
+          {DISCOVERY_FIVE_PHASES.map((phase) => {
             const isActive =
               activeView === 'discovery' &&
               !viewingStartScreen &&
-              activeModule >= phase.startStep &&
-              activeModule <= phase.endStep;
+              activeModule === phase.num;
             const isPast =
               activeView === 'discovery' &&
               !viewingStartScreen &&
-              activeModule > phase.endStep;
+              activeModule > phase.num;
 
             return (
               <button
                 key={phase.id}
                 type="button"
-                onClick={() => onSelectModule(phase.startStep)}
+                onClick={() => onSelectModule(phase.num)}
                 aria-current={isActive ? 'step' : undefined}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`relative py-2 text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ECC964] rounded ${
                   isActive
-                    ? 'bg-amber-500/15 text-amber-300 font-semibold border border-amber-500/30'
+                    ? 'text-[#FFF0BE] font-semibold'
                     : isPast
-                    ? 'text-emerald-300 hover:bg-slate-900'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'text-emerald-300 hover:text-emerald-200'
+                    : 'text-[#C4BCAD] hover:text-[#FFF0BE]'
                 }`}
               >
-                <span className="font-mono tabular-nums mr-1.5 opacity-80">{phase.code} ·</span>
-                <span>{phase.shortTitle}</span>
+                <span
+                  className={`font-mono tabular-nums mr-1.5 text-[11px] ${
+                    isActive ? 'text-[#ECC964]' : isPast ? 'text-emerald-400' : 'text-[#D4AF37]/80'
+                  }`}
+                >
+                  {phase.code}.
+                </span>
+                <span>{phase.shortLabel}</span>
+                {isActive && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-x-0 -bottom-[1px] h-[2px] bg-gradient-to-r from-transparent via-[#ECC964] to-transparent shadow-[0_0_8px_rgba(236,201,100,0.8)]"
+                  />
+                )}
               </button>
             );
           })}
         </nav>
 
-        {/* Actions */}
+        {/* Zona 3: Acciones contextuales (Portada siempre accesible en sesión activa) */}
         <div className="flex items-center gap-2.5 shrink-0">
-          {hasProgress &&
-            (viewingStartScreen ||
-              activeModule !== DISCOVERY_REPORT_STEP ||
-              activeView !== 'discovery') && (
+          {!viewingStartScreen && (
+            <button
+              type="button"
+              onClick={onOpenStartScreen}
+              className="flex items-center gap-1.5 h-9 px-3.5 rounded-lg chalamandra-btn-secondary text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <span>Portada</span>
+            </button>
+          )}
+
+          {viewingStartScreen ? (
+            hasProgress ? (
+              <button
+                type="button"
+                onClick={onContinueSession}
+                className="flex items-center gap-2 h-9 px-4 rounded-lg chalamandra-btn-primary text-xs font-bold cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Play className="w-3.5 h-3.5 fill-[#08070B] shrink-0" />
+                <span>Continuar sesión</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onSelectModule(1)}
+                className="flex items-center gap-2 h-9 px-4 rounded-lg chalamandra-btn-primary text-xs font-bold cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Compass className="w-3.5 h-3.5 shrink-0" />
+                <span>Comenzar sesión</span>
+              </button>
+            )
+          ) : (
+            hasProgress &&
+            activeModule !== DISCOVERY_REPORT_STEP && (
               <button
                 type="button"
                 onClick={() => onSelectModule(DISCOVERY_REPORT_STEP)}
-                className="hidden sm:flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-700 hover:border-amber-500 text-xs font-semibold text-slate-200 cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                className="hidden sm:flex items-center gap-2 h-9 px-3.5 rounded-lg chalamandra-btn-primary text-xs font-bold cursor-pointer whitespace-nowrap shrink-0"
               >
-                <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>Informe Ejecutivo</span>
+                <FileText className="w-3.5 h-3.5 shrink-0" />
+                <span>Ruta Inicial</span>
               </button>
-            )}
-
-          <ThemeToggle darkMode={darkMode} onToggle={() => setDarkMode(!darkMode)} />
+            )
+          )}
         </div>
       </div>
 
-      {/* Mobile & Tablet Phase Strip */}
-      <div className="flex lg:hidden overflow-x-auto px-4 py-2 border-t border-slate-900 gap-1.5 scrollbar-none">
-        {DISCOVERY_PHASE_GROUPS.map((phase) => {
-          const isActive =
-            activeView === 'discovery' &&
-            !viewingStartScreen &&
-            activeModule >= phase.startStep &&
-            activeModule <= phase.endStep;
-          return (
-            <button
-              key={phase.id}
-              type="button"
-              onClick={() => onSelectModule(phase.startStep)}
-              aria-current={isActive ? 'step' : undefined}
-              className={`min-h-9 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
-                isActive
-                  ? 'bg-amber-500 text-slate-950 font-semibold'
-                  : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <span className="font-mono tabular-nums mr-1">{phase.code} ·</span>
-              <span>{phase.shortTitle}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Discreet Linear Progress Bar */}
+      {/* Línea conductora metálica de progreso */}
       <div
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={completionPct}
         aria-label="Progreso de respuestas de la sesión"
-        className="h-0.5 w-full bg-slate-900 overflow-hidden"
+        className="h-[3px] w-full bg-[#151320] overflow-hidden"
       >
         <div
-          className="h-full bg-amber-500 transition-all duration-300 ease-out"
-          style={{ width: `${completionPct}%` }}
+          className="h-full bg-gradient-to-r from-[#B98519] via-[#ECC964] to-[#FFF0BE] shadow-[0_0_12px_rgba(236,201,100,0.65)] transition-all duration-300 ease-out"
+          style={{ width: `${Math.max(viewingStartScreen && !hasProgress ? 0 : 8, completionPct)}%` }}
         />
       </div>
     </header>

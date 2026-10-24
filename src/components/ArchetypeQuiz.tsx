@@ -1,35 +1,34 @@
 import { useState } from 'react';
-import { Target, CheckCircle2, RotateCcw, ShieldCheck, ArrowRight, Award } from 'lucide-react';
+import { Target, CheckCircle2, RotateCcw, ArrowRight, Award } from 'lucide-react';
 import { ARCHETYPES, QUIZ_QUESTIONS } from '../utils/constants';
-import { Archetype } from '../types';
+import { Archetype, InteractiveArchetype } from '../types';
 import { useAudio } from '../hooks/useAudio';
 import { triggerConfetti } from './Confetti';
 
 interface ArchetypeQuizProps {
-  onQuizComplete: (archetypeId: string) => void;
+  onQuizComplete: (archetypeId: InteractiveArchetype) => void;
 }
+
+const INITIAL_SCORES: Record<InteractiveArchetype, number> = {
+  'El Arquitecto': 0,
+  'El Alquimista': 0,
+  'El Explorador': 0
+};
 
 export default function ArchetypeQuiz({ onQuizComplete }: ArchetypeQuizProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
-  const [scores, setScores] = useState<Record<string, number>>({
-    arquitecto: 0,
-    alquimista: 0,
-    comandante: 0,
-    sabio: 0
-  });
-  const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
+  const [scores, setScores] = useState<Record<InteractiveArchetype, number>>(INITIAL_SCORES);
   const [completed, setCompleted] = useState<boolean>(false);
   const { playTick, playSuccessChime } = useAudio();
 
-  const handleSelectOption = (archetypeId: string, points: number, optionIdx: number) => {
+  const handleSelectOption = (archetypeId: InteractiveArchetype, points: number) => {
     playTick(700, 'sine', 0.05);
 
-    const newScores = { ...scores, [archetypeId]: scores[archetypeId] + points };
+    const newScores: Record<InteractiveArchetype, number> = {
+      ...scores,
+      [archetypeId]: (scores[archetypeId] || 0) + points
+    };
     setScores(newScores);
-
-    const newAnswers = [...selectedAnswers];
-    newAnswers[currentQuestionIndex] = optionIdx;
-    setSelectedAnswers(newAnswers);
 
     if (currentQuestionIndex < QUIZ_QUESTIONS.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
@@ -38,10 +37,9 @@ export default function ArchetypeQuiz({ onQuizComplete }: ArchetypeQuizProps) {
       playSuccessChime();
       triggerConfetti();
 
-      // Find highest scoring archetype
       let maxScore = -1;
-      let winningId = 'arquitecto';
-      (Object.entries(newScores) as [string, number][]).forEach(([id, val]) => {
+      let winningId: InteractiveArchetype = 'El Arquitecto';
+      (Object.entries(newScores) as [InteractiveArchetype, number][]).forEach(([id, val]) => {
         if (val > maxScore) {
           maxScore = val;
           winningId = id;
@@ -53,53 +51,51 @@ export default function ArchetypeQuiz({ onQuizComplete }: ArchetypeQuizProps) {
 
   const resetQuiz = () => {
     setCurrentQuestionIndex(0);
-    setScores({ arquitecto: 0, alquimista: 0, comandante: 0, sabio: 0 });
-    setSelectedAnswers([]);
+    setScores(INITIAL_SCORES);
     setCompleted(false);
   };
 
   const getWinningArchetype = (): Archetype => {
     let maxScore = -1;
-    let winningId = 'arquitecto';
-    (Object.entries(scores) as [string, number][]).forEach(([id, val]) => {
+    let winningId: InteractiveArchetype = 'El Arquitecto';
+    (Object.entries(scores) as [InteractiveArchetype, number][]).forEach(([id, val]) => {
       if (val > maxScore) {
         maxScore = val;
         winningId = id;
       }
     });
-    return ARCHETYPES[winningId] || ARCHETYPES.arquitecto;
+    return ARCHETYPES[winningId] || ARCHETYPES['El Arquitecto'];
   };
 
-  const totalPoints: number = (Object.values(scores) as number[]).reduce((a: number, b: number) => a + b, 0) || 1;
+  const totalPoints: number =
+    (Object.values(scores) as number[]).reduce((a: number, b: number) => a + b, 0) || 1;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 py-6">
-      {/* Title */}
-      <div className="text-center space-y-3">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
-          <Target className="w-3.5 h-3.5" />
-          <span>Evaluación Neuro-Psicológica</span>
-        </div>
-        <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-100 tracking-tight">
-          Quiz de Arquetipos de Dominio
+    <div className="max-w-3xl mx-auto space-y-8 py-6 animate-fadeIn">
+      <div className="space-y-2 border-b border-[#D4AF37]/20 pb-5">
+        <span className="text-xs font-mono text-violet-300/90 block">
+          Test oficial Interactive DecoX · 10 preguntas
+        </span>
+        <h1 className="font-display text-3xl sm:text-4xl font-semibold text-[#F5F2EB] tracking-tight text-balance">
+          Test de Arquetipo (Hipótesis Operativa)
         </h1>
-        <p className="text-sm sm:text-base text-slate-400 max-w-xl mx-auto">
-          Descubre tu modelo mental dominante y recibe la estrategia exacta para neutralizar tus puntos ciegos.
+        <p className="text-sm text-[#B8B2A6] max-w-2xl leading-relaxed">
+          Explora cuál de los tres arquetipos del catálogo de Interactive (El Arquitecto, El Alquimista o El Explorador) predomina hoy como punto de partida revisable, nunca como etiqueta fija.
         </p>
       </div>
 
       {!completed ? (
-        /* Question Card */
-        <div className="p-8 rounded-3xl bg-slate-900/90 border border-emerald-500/30 shadow-2xl space-y-6">
-          {/* Progress Indicator */}
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400 border-b border-slate-800 pb-4">
-            <span>Pregunta {currentQuestionIndex + 1} de {QUIZ_QUESTIONS.length}</span>
-            <span className="text-emerald-400 font-bold">
-              {Math.round(((currentQuestionIndex + 1) / QUIZ_QUESTIONS.length) * 100)}% Completado
+        <div className="p-7 sm:p-8 rounded-2xl chalamandra-surface space-y-6">
+          <div className="flex items-center justify-between text-xs font-mono text-[#A8A39A] border-b border-[#D4AF37]/15 pb-4 tabular-nums">
+            <span>
+              Pregunta {currentQuestionIndex + 1} de {QUIZ_QUESTIONS.length}
+            </span>
+            <span className="text-[#F3DC9B] font-semibold">
+              {Math.round(((currentQuestionIndex + 1) / QUIZ_QUESTIONS.length) * 100)}%
             </span>
           </div>
 
-          <h2 className="text-xl sm:text-2xl font-bold text-slate-100 leading-snug">
+          <h2 className="font-display text-lg sm:text-xl font-semibold text-[#F5F2EB] leading-snug">
             {QUIZ_QUESTIONS[currentQuestionIndex].question}
           </h2>
 
@@ -108,55 +104,55 @@ export default function ArchetypeQuiz({ onQuizComplete }: ArchetypeQuizProps) {
               <button
                 key={idx}
                 id={`quiz-opt-${currentQuestionIndex}-${idx}`}
-                onClick={() => handleSelectOption(opt.archetypeId, opt.points, idx)}
-                className="w-full text-left p-4 rounded-2xl bg-slate-950/70 hover:bg-slate-850 border border-slate-800 hover:border-emerald-500/40 text-slate-200 text-sm leading-relaxed transition-all cursor-pointer flex items-center justify-between group"
+                type="button"
+                onClick={() => handleSelectOption(opt.archetypeId, opt.points)}
+                className="w-full text-left p-4 rounded-xl bg-[#07080C] hover:bg-[#11141E] border border-[#252938] hover:border-[#D4AF37]/50 text-[#EAE4D8] text-sm leading-relaxed transition-colors cursor-pointer flex items-center justify-between group"
               >
                 <span>{opt.label}</span>
-                <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0 ml-3" />
+                <ArrowRight className="w-4 h-4 text-[#8C867A] group-hover:text-[#D4AF37] transition-colors shrink-0 ml-3" />
               </button>
             ))}
           </div>
         </div>
       ) : (
-        /* Results Card */
-        <div className="p-8 rounded-3xl bg-slate-900 border border-amber-500/30 shadow-2xl space-y-8 animate-fadeIn">
-          {/* Header */}
-          <div className="text-center space-y-3">
-            <span className="text-xs font-mono text-amber-400 uppercase tracking-widest">Tu Arquetipo Principal</span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-amber-300 font-mono">
+        <div className="p-7 sm:p-8 rounded-2xl chalamandra-surface-elevated space-y-6 animate-fadeIn">
+          <div className="space-y-1.5">
+            <span className="text-xs font-mono text-violet-300 block">
+              Hipótesis de estilo actual (revisable con hechos)
+            </span>
+            <h2 className="font-display text-2xl sm:text-3xl font-semibold text-[#F5F2EB]">
               {getWinningArchetype().name}
             </h2>
-            <p className="text-sm text-slate-300 max-w-lg mx-auto italic">
-              "{getWinningArchetype().tagline}"
-            </p>
+            <p className="text-sm text-[#D1CCC0]">{getWinningArchetype().tagline}</p>
           </div>
 
-          <p className="text-sm text-slate-300 leading-relaxed bg-slate-950/60 p-5 rounded-2xl border border-slate-800">
+          <p className="text-xs sm:text-sm text-[#D1CCC0] leading-relaxed chalamandra-chamber p-4 rounded-xl">
             {getWinningArchetype().description}
           </p>
 
-          {/* Radar / Score Progress Bars */}
-          <div className="p-6 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Desglose de Puntuación por Arquetipo
+          <div className="p-5 rounded-xl chalamandra-chamber space-y-3">
+            <h3 className="text-xs font-semibold text-[#F3DC9B]">
+              Distribución en los 3 arquetipos reales de Interactive
             </h3>
             {Object.entries(ARCHETYPES).map(([id, arch]) => {
-              const scoreVal = scores[id] || 0;
+              const scoreVal = scores[id as InteractiveArchetype] || 0;
               const percentage = Math.round((scoreVal / totalPoints) * 100);
               const isWinner = id === getWinningArchetype().id;
 
               return (
                 <div key={id} className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className={`font-semibold ${isWinner ? 'text-amber-400' : 'text-slate-300'}`}>
-                      {arch.name} {isWinner && '(Dominante)'}
+                  <div className="flex justify-between text-xs tabular-nums">
+                    <span className={`font-semibold ${isWinner ? 'text-[#F3DC9B]' : 'text-[#D1CCC0]'}`}>
+                      {arch.name}
                     </span>
-                    <span className="font-mono text-slate-400">{percentage}%</span>
+                    <span className="font-mono text-[#A8A39A]">{percentage}%</span>
                   </div>
-                  <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div className="w-full h-1.5 rounded-sm bg-[#161A26] overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all duration-1000 ${
-                        isWinner ? 'bg-gradient-to-r from-amber-500 to-yellow-500' : 'bg-slate-600'
+                      className={`h-full ${
+                        isWinner
+                          ? 'bg-gradient-to-r from-[#B58E24] to-[#F3DC9B]'
+                          : 'bg-[#383E52]'
                       }`}
                       style={{ width: `${percentage}%` }}
                     />
@@ -166,55 +162,48 @@ export default function ArchetypeQuiz({ onQuizComplete }: ArchetypeQuizProps) {
             })}
           </div>
 
-          {/* Strengths & Blindspots Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-3">
-              <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Fortalezas Clave</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl chalamandra-chamber space-y-2">
+              <h4 className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Fortalezas potenciales</span>
               </h4>
-              <ul className="space-y-1.5 text-xs text-slate-200">
+              <ul className="space-y-1 text-xs text-[#D1CCC0]">
                 {getWinningArchetype().strengths.map((s, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                    <span>{s}</span>
-                  </li>
+                  <li key={i}>• {s}</li>
                 ))}
               </ul>
             </div>
 
-            <div className="p-5 rounded-2xl bg-rose-500/10 border border-rose-500/30 space-y-3">
-              <h4 className="text-xs font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
-                <Target className="w-4 h-4" />
-                <span>Puntos Ciegos Tácticos</span>
+            <div className="p-4 rounded-xl chalamandra-chamber space-y-2">
+              <h4 className="text-xs font-semibold text-rose-300 flex items-center gap-1.5">
+                <Target className="w-3.5 h-3.5" />
+                <span>Puntos ciegos a vigilar</span>
               </h4>
-              <ul className="space-y-1.5 text-xs text-slate-200">
+              <ul className="space-y-1 text-xs text-[#D1CCC0]">
                 {getWinningArchetype().blindspots.map((b, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                    <span>{b}</span>
-                  </li>
+                  <li key={i}>• {b}</li>
                 ))}
               </ul>
             </div>
           </div>
 
-          {/* Action Callout */}
-          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-4">
+          <div className="p-4 rounded-xl chalamandra-chamber flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <Award className="w-6 h-6 text-amber-400 shrink-0" />
-              <div>
-                <span className="text-xs font-mono text-amber-300 block font-bold">Hack Recomendado:</span>
-                <span className="text-sm font-bold text-slate-100">{getWinningArchetype().recommendedHack}</span>
+              <Award className="w-5 h-5 text-[#D4AF37] shrink-0" />
+              <div className="text-xs">
+                <span className="font-mono text-[#A8A39A] block">Hacks afines en catálogo:</span>
+                <span className="font-semibold text-[#F5F2EB]">{getWinningArchetype().recommendedHack}</span>
               </div>
             </div>
             <button
               id="quiz-reset-btn"
+              type="button"
               onClick={resetQuiz}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 text-xs font-semibold cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl chalamandra-btn-secondary text-xs font-semibold cursor-pointer whitespace-nowrap"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Repetir Quiz</span>
+              <RotateCcw className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>Repetir test</span>
             </button>
           </div>
         </div>

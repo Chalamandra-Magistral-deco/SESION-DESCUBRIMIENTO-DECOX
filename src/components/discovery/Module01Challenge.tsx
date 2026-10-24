@@ -1,22 +1,27 @@
 import React, { useState } from 'react';
 import {
   Target,
-  Sparkles,
   Building2,
   User,
   ArrowRight,
-  Clock,
   AlertTriangle,
-  CheckCircle2,
-  GitBranch,
-  Users
+  GitBranch
 } from 'lucide-react';
-import { ChallengeData, ExplorationFocusType, DiscoveryTrackType } from '../../types';
+import {
+  ChallengeData,
+  ExplorationFocusType,
+  DiscoveryTrackType,
+  PowerLensDomain
+} from '../../types';
 import {
   DISCOVERY_TRACK_OPTIONS,
   EXPLORATION_FOCUS_OPTIONS,
   STEP1_CONDITIONAL_QUESTIONS
 } from '../../data/discoveryFlowConfig';
+import {
+  POWER_LENS_DOMAINS,
+  inferDomainFromCategory
+} from '../../data/interactiveCatalog';
 
 interface Module01ChallengeProps {
   challenge: ChallengeData;
@@ -41,6 +46,9 @@ export default function Module01Challenge({
   const activeTrack: DiscoveryTrackType = challenge.track || 'persona';
   const isOrg = activeTrack === 'organizacion';
   const activeFocus: ExplorationFocusType = challenge.explorationFocus || 'Problema o bloqueo';
+  const activeDomain: PowerLensDomain =
+    challenge.domain || inferDomainFromCategory(challenge.category);
+
   const activeConditionals = STEP1_CONDITIONAL_QUESTIONS.filter((q) =>
     q.shouldDisplay({ ...challenge, track: activeTrack, explorationFocus: activeFocus })
   );
@@ -49,6 +57,14 @@ export default function Module01Challenge({
     onChange({
       ...challenge,
       track: newTrack
+    });
+  };
+
+  const handleCategoryChange = (cat: ChallengeData['category']) => {
+    onChange({
+      ...challenge,
+      category: cat,
+      domain: challenge.domain || inferDomainFromCategory(cat)
     });
   };
 
@@ -63,9 +79,14 @@ export default function Module01Challenge({
   };
 
   const handleAdvance = () => {
-    if (!challenge.currentSituation.trim() && !challenge.criticalFriction.trim()) {
+    const hasProblem =
+      Boolean(challenge.currentSituation.trim()) || Boolean(challenge.criticalFriction.trim());
+    const hasObjective =
+      Boolean(challenge.expectedOutcome.trim()) || Boolean(challenge.title.trim());
+
+    if (!hasProblem || !hasObjective) {
       setValidationNotice(
-        'Registra al menos los hechos observables de tu situación actual o el nodo de fricción principal para continuar con una base real.'
+        'Para avanzar a Decodificar, describe al menos qué objetivo buscas alcanzar y cuál es el problema o fricción actual.'
       );
       return;
     }
@@ -75,51 +96,33 @@ export default function Module01Challenge({
 
   return (
     <div className="space-y-8 animate-fadeIn">
-      {/* Module Heading */}
-      <div className="border-b border-slate-800 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-amber-400 text-xs font-mono mb-2 tabular-nums">
-            <Target className="w-3.5 h-3.5" />
-            <span>Paso 01 de 13 · Encuadre Inicial y Exploración</span>
+      {/* Encabezado de Fase 1 */}
+      <div className="border-b border-[#D4AF37]/35 pb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-[#ECC964] text-xs font-mono font-semibold tabular-nums">
+            <Target className="w-4 h-4 text-[#ECC964]" />
+            <span>Fase 01 de 05 · Explorar</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-100">
+          <h2 className="font-display text-2xl sm:text-3xl font-semibold text-[#FAF6ED] tracking-tight text-balance">
             {isOrg
-              ? 'Contexto del Sistema de Trabajo, Actores y Desafío'
-              : 'Contexto de tu Problema, Idea o Proyecto'}
+              ? 'Explorar el objetivo, la fricción y el sistema actual'
+              : 'Explorar tu objetivo, tu fricción actual y lo intentado'}
           </h2>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl">
-            {isOrg
-              ? 'Describe los hechos observables del sistema organizacional, quiénes intervienen y dónde se bloquea hoy la coordinación o ejecución.'
-              : 'Describe los hechos observables de tu situación personal o profesional sin adornos ni suposiciones para activar los 7 hacks adaptativos.'}
+          <p className="text-xs sm:text-sm text-[#D6CFC2] max-w-2xl leading-relaxed">
+            Registra con hechos concretos qué quieres lograr, qué frena hoy el avance, qué ya intentaste con su resultado y bajo qué restricciones reales operas.
           </p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex items-center gap-3 self-start sm:self-auto">
-          {isOrg ? (
-            <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
-          ) : (
-            <User className="w-4 h-4 text-amber-400 shrink-0" />
-          )}
-          <div className="text-xs">
-            <span className="text-slate-400 block font-mono">Recorrido Activo</span>
-            <span className="font-bold text-slate-200">
-              {isOrg ? 'Organizaciones · Sistema y Actores' : 'Personas · Proyectos y Decisiones'}
-            </span>
-          </div>
+        <div className="px-3.5 py-2 rounded-xl chalamandra-chamber text-xs font-mono sm:text-right shrink-0">
+          <span className="block text-[#B8B0A0]">Recorrido activo</span>
+          <span className="font-semibold text-[#FFF0BE]">
+            {isOrg ? 'Organizaciones' : 'Personas'} · Dominio {activeDomain}
+          </span>
         </div>
       </div>
 
-      {/* 0. Dual Track Selector (Personas vs Organizaciones) */}
-      <div className="p-6 rounded-3xl bg-slate-900/90 border border-amber-500/25 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-            1. Recorrido Metodológico (Personas vs. Organizaciones)
-          </h3>
-          <span className="text-[11px] font-mono text-amber-400">
-            Adapta preguntas, ejemplos, hacks y síntesis final
-          </span>
-        </div>
-
+      {/* Bloque 1: Contexto base (Recorrido, Tipo de caso y Dominio Interactive) */}
+      <section className="p-6 sm:p-7 rounded-2xl chalamandra-surface space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {DISCOVERY_TRACK_OPTIONS.map((tOpt) => {
             const selected = activeTrack === tOpt.value;
@@ -129,164 +132,216 @@ export default function Module01Challenge({
                 key={tOpt.value}
                 type="button"
                 onClick={() => handleTrackChange(tOpt.value)}
-                className={`p-4 rounded-2xl border text-left transition-all cursor-pointer space-y-1.5 ${
-                  selected
-                    ? 'bg-amber-500/15 border-amber-500/60 ring-1 ring-amber-500/30'
-                    : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+                className={`p-4 rounded-xl text-left cursor-pointer space-y-1.5 ${
+                  selected ? 'chalamandra-selector-active' : 'chalamandra-selector'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-2 text-xs font-bold text-slate-100">
-                    <Icon className={`w-4 h-4 ${selected ? 'text-amber-400' : 'text-slate-400'}`} />
+                  <span className="flex items-center gap-2 text-xs font-display font-semibold text-[#FAF6ED]">
+                    <Icon className={`w-4 h-4 ${selected ? 'text-[#FFF0BE]' : 'text-[#ECC964]'}`} />
                     {tOpt.title}
                   </span>
-                  <span className="text-[11px] font-mono text-amber-400">
-                    {selected ? 'Seleccionado' : 'Cambiar'}
+                  <span className="text-[11px] font-mono text-[#FFF0BE]">
+                    {selected ? '✓ Activo' : 'Elegir'}
                   </span>
                 </div>
-                <p className="text-[11px] font-semibold text-slate-300">{tOpt.subtitle}</p>
-                <p className="text-[11px] text-slate-400 leading-snug">{tOpt.focusSummary}</p>
+                <p className="text-xs text-[#D6CFC2] leading-relaxed">{tOpt.subtitle}</p>
               </button>
             );
           })}
         </div>
-      </div>
 
-      {/* 1. Exploration Focus Selector (Interactive Conditional Trigger) */}
-      <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-            2. ¿Qué tipo de desafío vas a explorar hoy?
-          </h3>
-          <span className="text-[11px] font-mono text-cyan-400">
-            Dispara preguntas condicionales específicas
+        <div className="space-y-2">
+          <span className="block text-xs font-semibold text-[#F6DF96]">
+            Naturaleza de lo que vas a trabajar hoy
           </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {EXPLORATION_FOCUS_OPTIONS.map((opt) => {
-            const isSelected = activeFocus === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => onChange({ ...challenge, explorationFocus: opt.value })}
-                className={`p-4 rounded-2xl border text-left transition-all cursor-pointer space-y-1.5 ${
-                  isSelected
-                    ? 'bg-cyan-500/15 border-cyan-500/50 text-cyan-300 ring-1 ring-cyan-500/30'
-                    : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700'
-                }`}
-              >
-                <span className="text-xs font-bold block text-slate-100">{opt.title}</span>
-                <p className="text-[11px] text-slate-400 leading-snug">{opt.description}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 2. Participant & Domain */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4">
-          <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-            3. {isOrg ? 'Responsable y Unidad / Organización' : 'Titular y Contexto Profesional'}
-          </h3>
-
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                {isOrg ? 'Nombre de quien lidera la exploración' : 'Tu Nombre o Identificador'}
-              </label>
-              <input
-                type="text"
-                value={challenge.clientName}
-                onChange={(e) => onChange({ ...challenge, clientName: e.target.value })}
-                placeholder={isOrg ? 'Ej: Carlos Méndez' : 'Ej: Ana Morales'}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                {isOrg
-                  ? 'Organización, Área y Tamaño del Sistema'
-                  : 'Proyecto, Actividad o Rol Actual'}
-              </label>
-              <input
-                type="text"
-                value={challenge.companyOrRole}
-                onChange={(e) => onChange({ ...challenge, companyOrRole: e.target.value })}
-                placeholder={
-                  isOrg
-                    ? 'Ej: Dirección de Operaciones · Empresa B2B (25 personas)'
-                    : 'Ej: Consultoría Independiente / Nuevo Producto Digital'
-                }
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {EXPLORATION_FOCUS_OPTIONS.map((opt) => {
+              const isSelected = activeFocus === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onChange({ ...challenge, explorationFocus: opt.value })}
+                  className={`p-3.5 rounded-xl text-left cursor-pointer space-y-1 ${
+                    isSelected ? 'chalamandra-selector-active' : 'chalamandra-selector'
+                  }`}
+                >
+                  <span className="text-xs font-bold block text-[#FAF6ED]">{opt.title}</span>
+                  <p className="text-[11px] text-[#D6CFC2] leading-snug">{opt.description}</p>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4">
-          <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-            4. Ámbito Principal y Horizonte
-          </h3>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => onChange({ ...challenge, category: cat })}
-                className={`p-3 rounded-xl border text-xs font-medium text-left transition-all cursor-pointer ${
-                  challenge.category === cat
-                    ? 'bg-amber-500/15 border-amber-500/50 text-amber-300 font-bold'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <span>{cat}</span>
-              </button>
-            ))}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-[#D4AF37]/25">
+          <div>
+            <label className="block text-xs font-semibold text-[#F6DF96] mb-1.5">
+              {isOrg ? 'Responsable de la sesión (opcional)' : 'Tu nombre o identificador (opcional)'}
+            </label>
+            <input
+              type="text"
+              value={challenge.clientName}
+              onChange={(e) => onChange({ ...challenge, clientName: e.target.value })}
+              placeholder={isOrg ? 'Ej: Dirección Operaciones' : 'Ej: Ana Morales'}
+              className="w-full px-3.5 py-2.5 rounded-xl chalamandra-input text-xs"
+            />
           </div>
 
-          <div className="pt-1">
-            <label className="block text-xs text-slate-400 mb-1">Horizonte Temporal</label>
+          <div>
+            <label className="block text-xs font-semibold text-[#F6DF96] mb-1.5">
+              {isOrg ? 'Organización / equipo y tamaño' : 'Rol, proyecto o actividad'}
+            </label>
+            <input
+              type="text"
+              value={challenge.companyOrRole}
+              onChange={(e) => onChange({ ...challenge, companyOrRole: e.target.value })}
+              placeholder={
+                isOrg ? 'Ej: Firma B2B · 18 personas' : 'Ej: Consultora independiente'
+              }
+              className="w-full px-3.5 py-2.5 rounded-xl chalamandra-input text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#F6DF96] mb-1.5">
+              Dominio del caso (conectado a Lentes de Poder)
+            </label>
+            <select
+              value={activeDomain}
+              onChange={(e) =>
+                onChange({ ...challenge, domain: e.target.value as PowerLensDomain })
+              }
+              className="w-full px-3.5 py-2.5 rounded-xl chalamandra-input text-xs"
+            >
+              {POWER_LENS_DOMAINS.map((dom) => (
+                <option key={dom} value={dom} className="bg-[#0D0C13] text-[#FAF6ED]">
+                  {dom}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="md:col-span-2">
+            <label className="block text-xs font-semibold text-[#F6DF96] mb-1.5">
+              Ámbito operativo principal
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => handleCategoryChange(cat)}
+                  className={`px-3 py-2.5 rounded-xl text-xs text-left cursor-pointer ${
+                    challenge.category === cat
+                      ? 'chalamandra-selector-active font-semibold'
+                      : 'chalamandra-selector'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#F6DF96] mb-1.5">
+              Horizonte de referencia
+            </label>
             <input
               type="text"
               value={challenge.timeframe}
               onChange={(e) => onChange({ ...challenge, timeframe: e.target.value })}
-              placeholder="Ej: Próximos 14 días / Próximos 30 días"
-              className="w-full px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+              placeholder="Ej: Próximos 30 días"
+              className="w-full px-3.5 py-2.5 rounded-xl chalamandra-input text-xs"
             />
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* 3. Core Factual Inputs */}
-      <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-6">
+      {/* Bloque 2: Las 4 dimensiones obligatorias de EXPLORAR */}
+      <section className="p-6 sm:p-8 rounded-2xl chalamandra-surface-elevated space-y-6">
         <div>
-          <label className="block text-xs font-bold text-slate-200 uppercase tracking-wider mb-2">
-            5. Enunciado Breve del Desafío a Decodificar
+          <label className="block font-display text-sm font-semibold text-[#FFF0BE] mb-1.5">
+            Enunciado breve del caso
           </label>
           <input
             type="text"
             value={challenge.title}
-            onChange={(e) => onChange({ ...challenge, title: e.target.value })}
+            onChange={(e) => {
+              if (validationNotice) setValidationNotice(null);
+              onChange({ ...challenge, title: e.target.value });
+            }}
             placeholder={
               isOrg
-                ? 'Ej: Destrabar aprobaciones entre comercial y operaciones sin perder margen'
-                : 'Ej: Validar oferta de diagnóstico propio sin comprometer mis ingresos actuales'
+                ? 'Ej: Destrabar cotizaciones retenidas en dirección sin perder margen'
+                : 'Ej: Validar un diagnóstico propio pagado sin comprometer mi trabajo actual'
             }
-            className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="w-full px-4 py-3 rounded-xl chalamandra-input text-sm font-medium"
           />
         </div>
 
+        {/* 1. Objetivo y cambio deseado */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <Clock className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Hechos Observados Hoy (Sin adjetivos ni suposiciones)</span>
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-[#FAF6ED]">
+              <span className="font-mono text-[#ECC964] mr-1.5">01.</span>
+              Objetivo que quieres alcanzar y cambio deseado
             </label>
+            <p className="text-xs text-[#C4BCAD]">
+              ¿Qué resultado concreto quieres ver operando al final del horizonte elegido?
+            </p>
+            <textarea
+              rows={3}
+              value={challenge.expectedOutcome}
+              onChange={(e) => {
+                if (validationNotice) setValidationNotice(null);
+                onChange({ ...challenge, expectedOutcome: e.target.value });
+              }}
+              placeholder={
+                isOrg
+                  ? 'Ej: Que el 70% de las propuestas estándar salgan aprobadas por los líderes manteniendo >= 45% de margen...'
+                  : 'Ej: Cerrar y entregar los primeros 3 diagnósticos pagados dedicando <= 6 horas por semana...'
+              }
+              className="w-full px-4 py-3 rounded-xl chalamandra-input text-xs leading-relaxed"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-[#FAF6ED]">
+              <span className="font-mono text-cyan-300 mr-1.5">Señal ·</span>
+              Indicador observable de avance (¿cómo sabrás que funcionó?)
+            </label>
+            <p className="text-xs text-[#C4BCAD]">
+              Define un hecho o indicador verificable para evaluar el cambio sin autoengaño.
+            </p>
+            <textarea
+              rows={3}
+              value={challenge.primaryMetric}
+              onChange={(e) => onChange({ ...challenge, primaryMetric: e.target.value })}
+              placeholder={
+                isOrg
+                  ? 'Ej: Reducir demora comercial de 48h a menos de 6h sin bajar del 45% de margen.'
+                  : 'Ej: 3 propuestas pagadas aceptadas en 30 días dentro de 6h semanales.'
+              }
+              className="w-full px-4 py-3 rounded-xl chalamandra-input text-xs leading-relaxed"
+            />
+          </div>
+        </div>
+
+        {/* 2. Problema o fricción actual */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-[#FAF6ED]">
+              <span className="font-mono text-[#ECC964] mr-1.5">02.</span>
+              Situación actual (hechos observables hoy)
+            </label>
+            <p className="text-xs text-[#C4BCAD]">
+              Describe qué ocurre hoy con datos concretos (tiempos, volumen, frecuencia), sin etiquetas.
+            </p>
             <textarea
               rows={4}
               value={challenge.currentSituation}
@@ -296,18 +351,21 @@ export default function Module01Challenge({
               }}
               placeholder={
                 isOrg
-                  ? 'Describe hechos verificables del sistema de trabajo: tiempos de ciclo, volumen de retrabajo, pasos actuales...'
-                  : 'Describe hechos concretos hoy: horas reales dedicadas, resultados medidos, acciones ejecutadas...'
+                  ? 'Ej: El 85% de las cotizaciones pasa por Dirección General y tarda de 48 a 72 horas en responderse...'
+                  : 'Ej: Dedico 6h semanales a preparar mi oferta propia desde hace 6 semanas, pero he enviado 0 propuestas...'
               }
-              className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-800 text-slate-100 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              className="w-full px-4 py-3 rounded-xl chalamandra-input text-xs leading-relaxed"
             />
           </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-              <span>Nodo Crítico de Fricción (¿Dónde se detiene el sistema?)</span>
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-[#FAF6ED]">
+              <span className="font-mono text-amber-300 mr-1.5">Fricción ·</span>
+              Problema específico que bloquea el avance
             </label>
+            <p className="text-xs text-[#C4BCAD]">
+              ¿Dónde exactamente se frena la decisión, la entrega o la coordinación?
+            </p>
             <textarea
               rows={4}
               value={challenge.criticalFriction}
@@ -317,23 +375,64 @@ export default function Module01Challenge({
               }}
               placeholder={
                 isOrg
-                  ? 'Especifica en qué interacción, regla o escalamiento se estanca la ejecución...'
-                  : 'Especifica el bloqueo exacto que hoy frena tu decisión o el avance del proyecto...'
+                  ? 'Ej: Los líderes escalan hasta ajustes menores por temor a equivocarse sin un criterio escrito de respaldo...'
+                  : 'Ej: Sigo rehaciendo el documento de presentación en lugar de presentar alcance y precio a contactos reales...'
               }
-              className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-800 text-slate-100 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-rose-500"
+              className="w-full px-4 py-3 rounded-xl chalamandra-input text-xs leading-relaxed"
             />
           </div>
         </div>
 
-        {/* Actors & Incentives Context (Critical for Organizaciones, helpful for Personas) */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-            <Users className="w-3.5 h-3.5 text-purple-400" />
-            <span>
-              {isOrg
-                ? 'Mapa de Actores Clave e Incentivos Actuales del Sistema'
-                : 'Personas, Clientes o Interlocutores Involucrados (Opcional)'}
-            </span>
+        {/* 3. Qué ha intentado y con qué resultado + 4. Restricciones relevantes */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-[#FAF6ED]">
+              <span className="font-mono text-[#ECC964] mr-1.5">03.</span>
+              Qué has intentado hasta ahora y con qué resultado
+            </label>
+            <p className="text-xs text-[#C4BCAD]">
+              Anota soluciones o esfuerzos previos y qué ocurrió realmente al probarlos.
+            </p>
+            <textarea
+              rows={4}
+              value={challenge.previousAttempts || ''}
+              onChange={(e) => onChange({ ...challenge, previousAttempts: e.target.value })}
+              placeholder={
+                isOrg
+                  ? 'Ej: Pedimos mayor autonomía en dos reuniones mensuales, pero a las dos semanas volvieron las consultas constantes por chat...'
+                  : 'Ej: Reescribí 4 veces el documento y di 3 llamadas gratuitas sin encuadre comercial; agradecieron, pero nadie contrató...'
+              }
+              className="w-full px-4 py-3 rounded-xl chalamandra-input text-xs leading-relaxed"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-[#FAF6ED]">
+              <span className="font-mono text-emerald-300 mr-1.5">04.</span>
+              Restricciones relevantes a respetar
+            </label>
+            <p className="text-xs text-[#C4BCAD]">
+              Tiempo disponible, presupuesto, acuerdos o límites no negociables del contexto actual.
+            </p>
+            <textarea
+              rows={4}
+              value={challenge.constraintsSummary || ''}
+              onChange={(e) => onChange({ ...challenge, constraintsSummary: e.target.value })}
+              placeholder={
+                isOrg
+                  ? 'Ej: Sin presupuesto para nuevas contrataciones este trimestre y margen bruto mínimo obligatorio del 45%...'
+                  : 'Ej: Máximo 6 horas semanales disponibles fuera del trabajo actual y cero presupuesto publicitario...'
+              }
+              className="w-full px-4 py-3 rounded-xl chalamandra-input text-xs leading-relaxed"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1.5 pt-3 border-t border-[#D4AF37]/25">
+          <label className="block text-xs font-semibold text-[#F6DF96]">
+            {isOrg
+              ? 'Actores clave e incentivos en juego'
+              : 'Personas o interlocutores involucrados (opcional)'}
           </label>
           <textarea
             rows={2}
@@ -343,102 +442,69 @@ export default function Module01Challenge({
             }
             placeholder={
               isOrg
-                ? 'Ej: Dirección (busca cuidar margen), Líderes de área (prefieren escalar dudas para evitar errores), Clientes (exigen respuesta rápida)...'
-                : 'Ej: Clientes potenciales de mi red, socio técnico o entorno familiar/laboral que influye en mi agenda...'
+                ? 'Ej: Dirección General, 6 líderes técnicos y clientes B2B que esperan cotización rápida...'
+                : 'Ej: Red de exclientes y contactos directos con cuellos de botella técnicos urgentes...'
             }
-            className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-800 text-slate-100 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500"
+            className="w-full px-4 py-2.5 rounded-xl chalamandra-input text-xs leading-relaxed"
           />
         </div>
+      </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-1">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Resultado Esperado en el Mundo Real</span>
-            </label>
-            <textarea
-              rows={3}
-              value={challenge.expectedOutcome}
-              onChange={(e) => onChange({ ...challenge, expectedOutcome: e.target.value })}
-              placeholder="¿Qué cambio observable y defendible quieres tener operando al cierre del horizonte?"
-              className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-800 text-slate-100 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-amber-500"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Criterio Medible de Decisión (Dato Observado)</span>
-            </label>
-            <textarea
-              rows={3}
-              value={challenge.primaryMetric}
-              onChange={(e) => onChange({ ...challenge, primaryMetric: e.target.value })}
-              placeholder={
-                isOrg
-                  ? 'Ej: Reducir ciclo de cotización de 48h a 6h manteniendo margen >= 45%'
-                  : 'Ej: Cerrar 3 diagnósticos pagados dedicando <= 6 horas semanales'
-              }
-              className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-800 text-slate-100 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Dynamic Conditional Questions Block */}
+      {/* Bloque 3: Preguntas adaptativas según foco/recorrido */}
       {activeConditionals.length > 0 && (
-        <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/95 border border-cyan-500/30 space-y-5">
-          <div className="flex items-start gap-3">
-            <GitBranch className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+        <section className="p-6 sm:p-7 rounded-2xl chalamandra-surface-cyan space-y-4">
+          <div className="flex items-start gap-2.5">
+            <GitBranch className="w-4 h-4 text-cyan-300 shrink-0 mt-0.5" />
             <div>
-              <span className="text-[11px] font-mono text-cyan-400 uppercase tracking-wider block font-bold">
-                Preguntas Adaptativas · {isOrg ? 'Organizaciones' : 'Personas'} · {activeFocus}
-              </span>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Estas preguntas se ajustan a tu recorrido y alimentan directamente la separación entre hechos, hipótesis y posibilidades imaginadas.
+              <h3 className="font-display text-sm font-semibold text-[#FFF0BE]">
+                Preguntas adaptativas para {activeFocus}
+              </h3>
+              <p className="text-xs text-[#D6CFC2] mt-0.5">
+                Afinan las evidencias e incertidumbres que utilizarás en la Fase 02 (Decodificar).
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {activeConditionals.map((q) => (
-              <div key={q.id} className="space-y-2">
-                <label className="block text-xs font-bold text-slate-200 leading-snug">
+              <div key={q.id} className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[#FAF6ED]">
                   {q.label}
                 </label>
-                <p className="text-[11px] text-slate-400 leading-snug">{q.helperText}</p>
+                <p className="text-[11px] text-[#C4BCAD]">{q.helperText}</p>
                 <textarea
                   rows={3}
                   value={challenge.conditionalAnswers?.[q.id] || ''}
                   onChange={(e) => handleConditionalChange(q.id, e.target.value)}
                   placeholder={q.placeholder}
-                  className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-800 text-slate-100 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl chalamandra-input text-xs leading-relaxed"
                 />
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
       {validationNotice && (
-        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/35 text-xs text-rose-200 flex items-center gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+        <div
+          role="alert"
+          className="p-4 rounded-xl chalamandra-surface-rose text-xs text-rose-100 flex items-center gap-2.5"
+        >
+          <AlertTriangle className="w-4 h-4 text-rose-300 shrink-0" />
           <span>{validationNotice}</span>
         </div>
       )}
 
-      {/* Navigation CTA */}
       <div className="flex justify-end pt-2">
         <button
           type="button"
           onClick={handleAdvance}
-          className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-bold text-xs shadow-lg shadow-amber-950/40 cursor-pointer transition-all hover:scale-[1.02]"
+          className="flex items-center gap-2.5 px-7 py-3.5 rounded-xl chalamandra-btn-primary font-bold text-xs cursor-pointer whitespace-nowrap"
         >
-          <span>Guardar Contexto y Pasar a Calibración Epistémica</span>
-          <ArrowRight className="w-4 h-4" />
+          <span>Continuar a Fase 02 · Decodificar</span>
+          <ArrowRight className="w-4 h-4 shrink-0" />
         </button>
       </div>
     </div>
   );
 }
-

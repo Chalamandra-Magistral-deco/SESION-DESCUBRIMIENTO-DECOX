@@ -12,17 +12,7 @@ import PowerLensGenerator from './components/PowerLensGenerator';
 import { ActiveView, OracleResponse } from './types';
 import { DISCOVERY_SYNTHESIS_STEP } from './data/discoveryFlowConfig';
 
-const THEME_STORAGE_KEY = 'chalamandra_discovery_theme';
-
 export default function App() {
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(THEME_STORAGE_KEY);
-      if (saved !== null) return saved === 'dark';
-    } catch {}
-    return true;
-  });
-
   const [activeView, setActiveView] = useState<ActiveView>('discovery');
   const [requestedModule, setRequestedModule] = useState<number | null>(null);
   const [sessionMeta, setSessionMeta] = useState<{
@@ -38,15 +28,8 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, darkMode ? 'dark' : 'light');
-    } catch {}
-  }, [darkMode]);
+    document.documentElement.classList.add('dark');
+  }, []);
 
   const handleSelectModuleFromNav = useCallback((moduleNum: number) => {
     setActiveView('discovery');
@@ -67,7 +50,13 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans selection:bg-amber-500 selection:text-slate-950 transition-colors">
+    <div className="chalamandra-obsidian-canvas relative min-h-screen flex flex-col text-[#F7F3EA] font-sans selection:bg-[#D4AF37] selection:text-[#07060A]">
+      {/* Corona de luz ambiental dorada y ámbar sobre el eje estratégico */}
+      <div
+        aria-hidden="true"
+        className="no-print pointer-events-none fixed inset-x-0 top-0 h-[520px] z-0 bg-[radial-gradient(ellipse_72%_52%_at_50%_-8%,rgba(212,175,55,0.20),rgba(245,158,11,0.07)_54%,transparent_100%)]"
+      />
+
       <Header
         activeView={activeView}
         activeModule={sessionMeta.activeModule}
@@ -76,24 +65,27 @@ export default function App() {
         completionPct={sessionMeta.completionPct}
         onSelectModule={handleSelectModuleFromNav}
         onOpenStartScreen={() => handleSelectModuleFromNav(0)}
-        darkMode={darkMode}
-        setDarkMode={setDarkMode}
+        onContinueSession={() =>
+          handleSelectModuleFromNav(
+            sessionMeta.hasSavedProgress ? sessionMeta.activeModule || 1 : 1
+          )
+        }
       />
 
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="relative z-10 flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-9">
         {activeView !== 'discovery' && (
-          <div className="no-print mb-6 flex items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900 border border-amber-500/30">
-            <div className="text-xs font-mono text-amber-300">
-              HERRAMIENTA COMPLEMENTARIA SRAP · Tu Sesión de Descubrimiento permanece guardada
+          <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl chalamandra-surface-elevated">
+            <div className="text-xs font-mono text-[#ECC964]">
+              Herramienta complementaria Interactive DecoX · Tu Sesión de Descubrimiento permanece resguardada
             </div>
             <button
               type="button"
               onClick={() => setActiveView('discovery')}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer transition-colors"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg chalamandra-btn-primary font-bold text-xs cursor-pointer whitespace-nowrap shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>
-                Volver a mi Sesión (Paso {String(sessionMeta.activeModule).padStart(2, '0')})
+              <span className="tabular-nums">
+                Volver a mi Sesión (Fase {String(sessionMeta.activeModule).padStart(2, '0')})
               </span>
             </button>
           </div>

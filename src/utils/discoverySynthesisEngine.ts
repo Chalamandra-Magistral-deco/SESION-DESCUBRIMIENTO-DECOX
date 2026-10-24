@@ -5,175 +5,298 @@ import {
   LabExperimentItem,
   HackDeliverableSummary,
   RealWorldOptionComparison,
-  LiveSessionBrief
+  LiveSessionBrief,
+  SrapOrientationState
 } from '../types';
-import { SEVEN_MAGISTRAL_HACKS } from './constants';
+import {
+  HACKS_DATA,
+  getPoderForHack,
+  INTERACTIVE_ARCHETYPES
+} from '../data/interactiveCatalog';
 import {
   STEP1_CONDITIONAL_QUESTIONS,
   STEP2_CONDITIONAL_QUESTIONS,
-  computeRecommendedHacks
+  recommendSingleHackForCase,
+  deriveGroundedPowersForCase
 } from '../data/discoveryFlowConfig';
 
 /**
- * Motor determinista de procesamiento para la Sesión de Descubrimiento (Interactive DecoX).
- * Conecta Fase A (Mundo Simulado), Fase B (Decodificación del sistema) y Fase C (Mundo Real),
- * separando explícitamente Hechos, Hipótesis y Posibilidades imaginadas sin presentar
- * correlaciones como causalidad demostrada ni sugerir prácticas engañosas.
+ * Motor determinista local para la Sesión de Descubrimiento DecoX (5 Fases).
+ * - Fundamenta todas las orientaciones en las respuestas reales del usuario y en el catálogo de Interactive.
+ * - Interpreta el arquetipo exclusivamente como hipótesis de trabajo (jamás etiqueta fija).
+ * - Conecta las respuestas de `plantillaMetodologica` del Hack elegido y el Lente de Poder (si se usó)
+ *   con la orientación SRAP y la Ruta Inicial del informe ejecutivo.
  */
+
+export function formatHackPlantillaSummary(
+  hackId: number | null,
+  hackPlantillaResponses: Record<number, string[]>
+): { aspecto: string; guia: string; respuesta: string }[] {
+  if (!hackId) return [];
+  const hack = HACKS_DATA.find((h) => h.id === hackId);
+  if (!hack) return [];
+  const raw = hackPlantillaResponses?.[hackId] || [];
+  return hack.plantillaMetodologica.map((item, idx) => ({
+    aspecto: item.aspecto,
+    guia: item.guia,
+    respuesta: (raw[idx] || '').trim()
+  }));
+}
+
+export function deriveSrapFromCase(state: DiscoveryDeliverableState): SrapOrientationState {
+  const { challenge, strategicProfile, selectedHackId, hackPlantillaResponses, powerLens } = state;
+  const recommendation = recommendSingleHackForCase(challenge, strategicProfile);
+  const effectiveHack =
+    (selectedHackId ? HACKS_DATA.find((h) => h.id === selectedHackId) : null) ||
+    recommendation.recommendedHack;
+
+  const plantillaPairs = formatHackPlantillaSummary(effectiveHack.id, hackPlantillaResponses);
+  const answeredPairs = plantillaPairs.filter((p) => p.respuesta.length > 0);
+  const linkedPower = getPoderForHack(effectiveHack);
+
+  // S — SINCRONIZAR: situar la acción en las condiciones reales actuales
+  const constraintParts: string[] = [];
+  if (challenge.constraintsSummary?.trim()) {
+    constraintParts.push(challenge.constraintsSummary.trim());
+  }
+  strategicProfile.realConstraints.forEach((rc) => {
+    if (rc.trim() && !constraintParts.includes(rc.trim())) {
+      constraintParts.push(rc.trim());
+    }
+  });
+
+  const baseCondition =
+    challenge.currentSituation.trim() ||
+    challenge.title.trim() ||
+    'Situación actual pendiente de detallar en Fase 1';
+
+  const sincronizar = [
+    `Condición actual: ${baseCondition}.`,
+    constraintParts.length > 0
+      ? `Restricciones reales a respetar: ${constraintParts.slice(0, 2).join('; ')}.`
+      : 'Sin restricciones duras declaradas aún; operar con alcance mínimo y controlado.',
+    `Horizonte y nivel de evidencia: ${challenge.timeframe || 'Próximos 30 días'} (${strategicProfile.evidenceLevel || 'Señales parciales'}).`
+  ].join(' ');
+
+  // R — RECONOCER: identificar el patrón que importa
+  const frictionPart =
+    challenge.criticalFriction.trim() ||
+    strategicProfile.dominantThoughtPattern.trim() ||
+    'Fricción central pendiente de precisar';
+
+  const attemptsPart = challenge.previousAttempts?.trim()
+    ? ` Intentos previos observados: "${challenge.previousAttempts.trim()}".`
+    : '';
+
+  const archetypePart = strategicProfile.archetypeHypothesis
+    ? ` Como hipótesis revisable (${strategicProfile.archetypeHypothesis}), vigilar el punto ciego: ${
+        INTERACTIVE_ARCHETYPES[strategicProfile.archetypeHypothesis]?.blindspots[0]?.toLowerCase() ||
+        'repetir la misma táctica sin contraste'
+      }.`
+    : '';
+
+  const plantillaInsightPart =
+    answeredPairs.length > 0
+      ? ` Desde la plantilla de ${effectiveHack.title} (${answeredPairs[0].aspecto}): "${answeredPairs[0].respuesta}".`
+      : '';
+
+  const reconocer = `Fricción prioritaria: ${frictionPart}.${attemptsPart}${plantillaInsightPart}${archetypePart}`;
+
+  // A — ACTIVAR: acción inmediata, concreta y proporcionada
+  const thirdFieldAnswer = answeredPairs[2]?.respuesta || answeredPairs[answeredPairs.length - 1]?.respuesta;
+  const lensSnippet =
+    powerLens?.used && powerLens.directive.trim()
+      ? ` Apoyado en Lente de Poder (${powerLens.poderTitle} · ${powerLens.domain}).`
+      : linkedPower
+      ? ` Asociado a ${linkedPower.title} (${linkedPower.proposito.toLowerCase()}).`
+      : '';
+
+  const activar = thirdFieldAnswer
+    ? `Aplicar de forma acotada y proporcionada el cierre de tu plantilla ${effectiveHack.title} (${answeredPairs[answeredPairs.length - 1].aspecto}): "${thirdFieldAnswer}". Medir avance con: ${
+        challenge.primaryMetric.trim() || 'registro directo del resultado observado'
+      }.${lensSnippet}`
+    : `Ejecutar una prueba pequeña y reversible aplicando "${effectiveHack.title}" (${effectiveHack.metodo}) sobre "${
+        challenge.criticalFriction.trim() || challenge.expectedOutcome.trim() || 'el frente prioritario'
+      }", midiendo ${challenge.primaryMetric.trim() || 'la primera respuesta observable'}.${lensSnippet}`;
+
+  // P — PAUSA: cuándo detenerse, revisar o no continuar
+  const topUncertainty =
+    strategicProfile.uncertainties?.[0]?.trim() ||
+    strategicProfile.conditionalProfileAnswers?.evidence_gap?.trim() ||
+    challenge.conditionalAnswers?.idea_critical_risk?.trim();
+
+  const artificialStop = strategicProfile.artificialConstraints[0]?.trim()
+    ? `No retomar la inercia de "${strategicProfile.artificialConstraints[0].trim()}". `
+    : '';
+
+  const pausa = `${artificialStop}Detenerse y revisar antes de escalar recursos si al cierre de las primeras 48–72 horas no se observa señal verificable en "${
+    challenge.primaryMetric.trim() || 'el criterio esperado'
+  }"${
+    topUncertainty
+      ? `, o mientras no quede despejada la incertidumbre: "${topUncertainty}".`
+      : ', o si la acción excede las restricciones reales declaradas.'
+  }`;
+
+  const immediateStep24h = thirdFieldAnswer
+    ? `En las próximas 24–72 h: ejecutar "${thirdFieldAnswer}" y anotar el hecho observado.`
+    : `En las próximas 24–72 h: completar los 3 campos de la plantilla de ${effectiveHack.title} y ejecutar una primera acción mínima verificable.`;
+
+  const nextStepAfterPause = challenge.expectedOutcome.trim()
+    ? `Tras revisar el punto de pausa: decidir con evidencia si consolidar la ruta hacia "${challenge.expectedOutcome.trim()}" o llevar las incógnitas abiertas a la sesión en vivo.`
+    : 'Tras revisar el punto de pausa: contrastar qué funcionó realmente y ajustar el siguiente ciclo o profundizarlo en la sesión en vivo.';
+
+  return {
+    sincronizar,
+    reconocer,
+    activar,
+    pausa,
+    immediateStep24h,
+    nextStepAfterPause,
+    metronomeUsedBpm: state.srapOrientation?.metronomeUsedBpm,
+    isCustomized: false
+  };
+}
 
 export function deriveSynthesisFromResponses(state: DiscoveryDeliverableState): {
   strategicMap: StrategicMapData;
   recommendedPlan: ActionPlanWeek[];
 } {
-  const { challenge, strategicProfile, selectedHackIds, hackNotes, experiments } = state;
+  const {
+    challenge,
+    strategicProfile,
+    selectedHackId,
+    hackPlantillaResponses,
+    powerLens
+  } = state;
+
   const track = challenge.track || 'persona';
   const isOrg = track === 'organizacion';
   const trackLabel = isOrg ? 'Recorrido Organizaciones' : 'Recorrido Personas';
 
-  const notedHackIds = Object.entries(hackNotes || {})
-    .filter(([, text]) => Boolean(text && text.trim()))
-    .map(([id]) => Number(id));
+  const recommendation = recommendSingleHackForCase(challenge, strategicProfile);
+  const chosenHack =
+    (selectedHackId ? HACKS_DATA.find((h) => h.id === selectedHackId) : null) ||
+    recommendation.recommendedHack;
 
-  const combinedHackIds = Array.from(new Set([...selectedHackIds, ...notedHackIds]));
-  const activeHackIds =
-    combinedHackIds.length > 0
-      ? combinedHackIds
-      : computeRecommendedHacks(challenge, strategicProfile).map((m) => m.hackId);
+  const linkedPower = getPoderForHack(chosenHack);
+  const plantillaItems = formatHackPlantillaSummary(chosenHack.id, hackPlantillaResponses);
+  const groundedPowers = deriveGroundedPowersForCase(challenge, strategicProfile);
 
-  const selectedHacks = SEVEN_MAGISTRAL_HACKS.filter((h) => activeHackIds.includes(h.id));
+  const effectiveSrap: SrapOrientationState =
+    state.srapOrientation?.sincronizar?.trim() &&
+    state.srapOrientation?.reconocer?.trim() &&
+    state.srapOrientation?.activar?.trim() &&
+    state.srapOrientation?.pausa?.trim() &&
+    !state.srapNeedsSync
+      ? state.srapOrientation
+      : deriveSrapFromCase(state);
+
   const focusLabel =
-    challenge.title.trim() || `${challenge.explorationFocus || 'Exploración'} en ${challenge.category}`;
+    challenge.title.trim() ||
+    challenge.expectedOutcome.trim() ||
+    `${challenge.explorationFocus || 'Caso'} en ${challenge.category}`;
 
-  // 1. HECHOS OBSERVADOS Y RESTRICCIONES REALES
+  // 1. HECHOS Y RESTRICCIONES DECLARADAS (sin inventar datos)
   const facts: string[] = [];
   if (challenge.currentSituation.trim()) {
-    facts.push(
-      `Hecho observado (${trackLabel} · ${challenge.explorationFocus || 'Exploración'}): ${challenge.currentSituation.trim()}`
-    );
+    facts.push(`Situación actual declarada: ${challenge.currentSituation.trim()}`);
   }
-  if (challenge.primaryMetric.trim()) {
-    facts.push(
-      `Criterio / métrica declarada: ${challenge.primaryMetric.trim()} (${challenge.timeframe || 'Plazo por confirmar'}).`
-    );
+  if (challenge.criticalFriction.trim()) {
+    facts.push(`Fricción prioritaria: ${challenge.criticalFriction.trim()}`);
   }
-  if (challenge.keyActorsAndIncentives?.trim()) {
-    facts.push(
-      `${isOrg ? 'Mapa de actores e incentivos declarados' : 'Entorno e interlocutores clave'}: ${challenge.keyActorsAndIncentives.trim()}`
-    );
+  if (challenge.previousAttempts?.trim()) {
+    facts.push(`Intentos previos y resultado: ${challenge.previousAttempts.trim()}`);
+  }
+  if (challenge.constraintsSummary?.trim()) {
+    facts.push(`Restricciones iniciales relevantes: ${challenge.constraintsSummary.trim()}`);
   }
   strategicProfile.realConstraints.forEach((rc) => {
-    if (rc.trim()) facts.push(`Restricción objetiva del Mundo Real: ${rc.trim()}`);
+    if (rc.trim()) facts.push(`Restricción real verificada: ${rc.trim()}`);
   });
-
+  if (challenge.primaryMetric.trim()) {
+    facts.push(
+      `Criterio observable de avance: ${challenge.primaryMetric.trim()} (${challenge.timeframe || 'Plazo por definir'}).`
+    );
+  }
   STEP1_CONDITIONAL_QUESTIONS.forEach((q) => {
     if (q.epistemicRole === 'fact' && q.shouldDisplay(challenge, strategicProfile)) {
       const ans = challenge.conditionalAnswers?.[q.id]?.trim();
       if (ans) facts.push(ans);
     }
   });
-
   if (facts.length === 0) {
     facts.push(
-      `Ámbito seleccionado (${trackLabel}): ${challenge.category} con horizonte "${challenge.timeframe || 'Próximos 30 días'}". Aún faltan hechos cuantificados en el Paso 01.`
+      `Caso iniciado en ${trackLabel} (${challenge.domain || 'Negocios'}). Aún faltan hechos observables detallados en la Fase 1.`
     );
   }
 
-  // 2. HIPÓTESIS MEDIBLES Y LECTURAS DEL SISTEMA (Correlaciones != Causalidad demostrada)
+  // 2. HIPÓTESIS DE TRABAJO (incluyendo arquetipo como hipótesis si existe)
   const hypotheses: string[] = [];
   if (strategicProfile.strategicHypothesis.trim()) {
+    hypotheses.push(`Hipótesis central de trabajo: ${strategicProfile.strategicHypothesis.trim()}`);
+  }
+  if (strategicProfile.archetypeHypothesis) {
+    const sourceLabel =
+      strategicProfile.archetypeSource === 'quiz'
+        ? 'obtenido en test de 10 preguntas'
+        : 'indicado voluntariamente';
     hypotheses.push(
-      `Hipótesis central sujeta a verificación: ${strategicProfile.strategicHypothesis.trim()}`
+      `Hipótesis de arquetipo Interactive (${strategicProfile.archetypeHypothesis}, ${sourceLabel} — hipótesis revisable, no diagnóstico definitivo): ${
+        strategicProfile.archetypeHypothesisNotes?.trim() ||
+        INTERACTIVE_ARCHETYPES[strategicProfile.archetypeHypothesis]?.tagline ||
+        ''
+      }`
     );
   }
   if (strategicProfile.dominantThoughtPattern.trim()) {
     hypotheses.push(
-      `Relato / supuesto dominante a contrastar: "${strategicProfile.dominantThoughtPattern.trim()}"`
+      `Patrón o relato actual a contrastar: "${strategicProfile.dominantThoughtPattern.trim()}"`
     );
   }
-  strategicProfile.underlyingAssumptions.forEach((assumption) => {
-    if (assumption.trim()) {
-      hypotheses.push(`Supuesto tratado como hipótesis (no hecho demostrado): "${assumption.trim()}"`);
-    }
-  });
   if (strategicProfile.hiddenIncentives.trim()) {
     hypotheses.push(
-      `Hipótesis sobre incentivos reales del sistema (Hacker · 04): ${strategicProfile.hiddenIncentives.trim()}`
+      `Lectura sobre incentivos o subtexto del entorno: ${strategicProfile.hiddenIncentives.trim()}`
     );
   }
-  if (hackNotes[2]?.trim()) {
-    hypotheses.push(`Patrón transferible detectado (Hermes · 02): ${hackNotes[2].trim()}`);
-  }
-  if (hackNotes[4]?.trim()) {
-    hypotheses.push(`Punto de influencia legítimo (Hacker · 04): ${hackNotes[4].trim()}`);
-  }
-  if (hackNotes[6]?.trim()) {
-    hypotheses.push(
-      `Hipótesis medible y criterio de decisión (Datos · 06, sin asumir causalidad previa): ${hackNotes[6].trim()}`
-    );
-  }
-
-  [...STEP1_CONDITIONAL_QUESTIONS, ...STEP2_CONDITIONAL_QUESTIONS].forEach((q) => {
-    if (q.epistemicRole === 'interpretation' && q.shouldDisplay(challenge, strategicProfile)) {
-      const ans =
-        challenge.conditionalAnswers?.[q.id]?.trim() ||
-        strategicProfile.conditionalProfileAnswers?.[q.id]?.trim();
-      if (ans) hypotheses.push(ans);
-    }
+  strategicProfile.underlyingAssumptions.forEach((a) => {
+    if (a.trim()) hypotheses.push(`Supuesto pendiente de contraste: "${a.trim()}"`);
   });
-
-  experiments.forEach((exp) => {
-    if (exp.hypothesis.trim()) {
-      hypotheses.push(
-        `Hipótesis experimental (${exp.executionWindow}): ${exp.hypothesis.trim()} — Criterio: ${exp.successIndicator}`
-      );
-    }
-  });
-
+  if (groundedPowers.length > 0) {
+    groundedPowers.forEach((gp) => {
+      hypotheses.push(`Relación fundamentada con ${gp.poder.title}: ${gp.foundation}`);
+    });
+  }
   if (hypotheses.length === 0) {
     hypotheses.push(
-      isOrg
-        ? 'Hipótesis base: el bloqueo proviene de reglas implícitas e incentivos defensivos entre actores más que de falta de capacidad técnica (pendiente de comprobar con una prueba controlada).'
-        : 'Hipótesis base: modificar una barrera autoimpuesta y validar en formato mínimo moverá el indicador principal sin requerir más recursos (pendiente de verificación empírica).'
+      'Hipótesis preliminar pendiente de formular explícitamente en la Fase 2 (Decodificar).'
     );
   }
 
-  // 3. POSIBILIDADES IMAGINADAS (Fase A · Mundo Simulado, pendientes de contraste con el Mundo Real)
+  // 3. APLICACIÓN DE HERRAMIENTAS DE INTERACTIVE (Hack + Plantilla + Lente opcional)
   const imaginedPossibilities: string[] = [];
-  if (hackNotes[1]?.trim()) {
-    imaginedPossibilities.push(
-      `Scheherazade (Reencuadre narrativo sin falsear hechos): ${hackNotes[1].trim()}`
-    );
-  }
-  if (hackNotes[3]?.trim()) {
-    imaginedPossibilities.push(`Carroll (Alternativa no obvia / paradoja): ${hackNotes[3].trim()}`);
-  }
-  if (hackNotes[7]?.trim()) {
-    imaginedPossibilities.push(
-      `El niño de 8 años (Posibilidad radical para poner a prueba): ${hackNotes[7].trim()}`
-    );
-  }
-  strategicProfile.artificialConstraints.forEach((ac) => {
-    if (ac.trim()) {
+  plantillaItems.forEach((item) => {
+    if (item.respuesta) {
       imaginedPossibilities.push(
-        `Escenario de Mundo Simulado sin la barrera autoimpuesta: "¿Qué se habilita si suspendemos '${ac.trim()}'?"`
+        `[${chosenHack.title} · ${item.aspecto}]: ${item.respuesta}`
       );
     }
   });
-
+  if (powerLens?.used && powerLens.directive.trim()) {
+    imaginedPossibilities.push(
+      `Lente de Poder aplicado (${powerLens.poderTitle} en ${powerLens.domain}): ${powerLens.directive.trim()}`
+    );
+  }
   if (imaginedPossibilities.length === 0) {
     imaginedPossibilities.push(
-      isOrg
-        ? `Posibilidad en Mundo Simulado: rediseñar "${focusLabel}" eliminando aprobaciones intermedias redundantes y operando con umbrales explícitos de autonomía.`
-        : `Posibilidad en Mundo Simulado: poner a prueba una versión radicalmente simple de "${focusLabel}" en 48–72 horas antes de construir infraestructura completa.`
+      `Hack seleccionado: ${chosenHack.title} (${chosenHack.metodo}). Completa los 3 campos de su plantilla metodológica en la Fase 3 para registrar tu aplicación concreta.`
     );
   }
 
-  // 4. INCERTIDUMBRES ABIERTAS Y VACÍOS DE DATOS
+  // 4. INCERTIDUMBRES ABIERTAS
   const uncertainties: string[] = [];
   (strategicProfile.uncertainties || []).forEach((u) => {
     if (u.trim()) uncertainties.push(u.trim());
   });
-
   [...STEP1_CONDITIONAL_QUESTIONS, ...STEP2_CONDITIONAL_QUESTIONS].forEach((q) => {
     if (q.epistemicRole === 'uncertainty' && q.shouldDisplay(challenge, strategicProfile)) {
       const ans =
@@ -182,220 +305,127 @@ export function deriveSynthesisFromResponses(state: DiscoveryDeliverableState): 
       if (ans) uncertainties.push(ans);
     }
   });
-
   if (strategicProfile.evidenceLevel && strategicProfile.evidenceLevel !== 'Datos verificados') {
     uncertainties.push(
-      `Nivel de evidencia reportado como "${strategicProfile.evidenceLevel}": las correlaciones percibidas requieren medición directa antes de tratarse como causas probadas.`
+      `Nivel de evidencia actual ("${strategicProfile.evidenceLevel}"): requiere verificación práctica antes de asumir conclusiones definitivas.`
     );
   }
-
-  if (strategicProfile.dependencyScope && strategicProfile.dependencyScope !== 'Control propio directo') {
-    uncertainties.push(
-      `Respuesta real de actores involucrados (${strategicProfile.dependencyScope}) ante el ajuste legítimo de reglas o condiciones.`
-    );
-  }
-
   if (uncertainties.length === 0) {
     uncertainties.push(
-      'Comprobar en las próximas 48–72 horas cómo responde el indicador objetivo ante el primer experimento reversible.'
+      'Verificar la respuesta real del entorno al ejecutar la acción inmediata definida en SRAP.'
     );
   }
 
-  // 5. COSECHA DE LOS HACKS APLICADOS (Deliverables de Fase A y Fase B)
-  const hackDeliverables: HackDeliverableSummary[] = selectedHacks.map((hack) => {
-    const userNote = hackNotes[hack.id]?.trim();
-    let fallbackSynthesis = '';
-    switch (hack.id) {
-      case 1:
-        fallbackSynthesis = `Reencuadrar "${focusLabel}" apoyándose estrictamente en hechos reales para comunicar su valor verdadero sin exageraciones.`;
-        break;
-      case 2:
-        fallbackSynthesis = `Aislar la secuencia repetitiva detrás de "${challenge.criticalFriction.trim() || focusLabel}" y traducir un protocolo probado de otro sector.`;
-        break;
-      case 3:
-        fallbackSynthesis = `Cuestionar la premisa fija del caso e integrar exigencias opuestas en una alternativa no obvia.`;
-        break;
-      case 4:
-        fallbackSynthesis = isOrg
-          ? 'Alinear reglas formales con incentivos reales de los actores mediante criterios explícitos y ventajas 100% legítimas.'
-          : 'Aprovechar márgenes legítimos dentro de las reglas actuales para operar con menor fricción y acuerdos transparentes.';
-        break;
-      case 5:
-        fallbackSynthesis =
-          experiments[0]?.concreteAction ||
-          'Introducir una variación pequeña y reversible durante 48h–7 días para observar rigideces y posibilidades reales.';
-        break;
-      case 6:
-        fallbackSynthesis = `Medir "${challenge.primaryMetric.trim() || 'el indicador objetivo'}" separando suposición de observación sin confundir correlación con causalidad.`;
-        break;
-      case 7:
-        fallbackSynthesis = `Explorar una versión sin limitaciones heredadas en el Mundo Simulado y extraer un prototipo seguro para el Mundo Real.`;
-        break;
-      default:
-        fallbackSynthesis = hack.expectedDeliverable;
-    }
+  // 5. RESUMEN DEL HACK CENTRAL SELECCIONADO
+  const filledPlantillaText = plantillaItems
+    .filter((p) => p.respuesta)
+    .map((p) => `${p.aspecto}: ${p.respuesta}`)
+    .join(' | ');
 
-    return {
-      hackId: hack.id,
-      hackName: hack.name,
-      phaseLabel: hack.phaseLabel,
-      deliverableTitle: hack.expectedDeliverable,
-      content: userNote || fallbackSynthesis,
-      epistemicTag: hack.epistemicRole
-    };
-  });
-
-  // 6. PUNTOS CRÍTICOS DEL NODO CENTRAL
-  const criticalPoints: string[] = [];
-  if (challenge.criticalFriction.trim()) {
-    criticalPoints.push(`Nodo crítico declarado: ${challenge.criticalFriction.trim()}`);
-  }
-  if (
-    strategicProfile.evidenceLevel === 'Intuición no verificada' ||
-    strategicProfile.evidenceLevel === 'Señales parciales'
-  ) {
-    criticalPoints.push(
-      'Riesgo epistémico: tomar señales parciales o correlaciones como causalidad demostrada antes de correr un experimento controlado.'
-    );
-  }
-  if (strategicProfile.artificialConstraints.length > 0) {
-    criticalPoints.push(
-      `Fricción autoimpuesta: ${strategicProfile.artificialConstraints.length} regla(s) asumida(s) limitan innecesariamente el margen de acción.`
-    );
-  }
-  if (isOrg || (strategicProfile.dependencyScope && strategicProfile.dependencyScope !== 'Control propio directo')) {
-    criticalPoints.push(
-      `Desalineación potencial de incentivos en "${strategicProfile.dependencyScope || 'sistema de trabajo'}": sin reglas legítimas explícitas, el bloqueo tiende a repetirse.`
-    );
-  }
-
-  // 7. FASE C · MUNDO REAL — COMPARATIVA DE ALTERNATIVAS, RECURSOS Y RIESGOS
-  const primaryConstraint =
-    strategicProfile.realConstraints[0] ||
-    (isOrg ? 'Capacidad actual del equipo y margen operativo' : 'Tiempo y recursos propios actuales');
-
-  const realWorldOptions: RealWorldOptionComparison[] = [
+  const hackDeliverables: HackDeliverableSummary[] = [
     {
-      optionTitle: 'Opción 1 · Continuar con la inercia actual',
-      originPhase: 'Línea base sin reconfiguración',
-      resourcesRequired: `Mantiene el desgaste actual sobre: ${primaryConstraint}.`,
-      keyRisk:
-        challenge.conditionalAnswers?.problem_inaction_cost?.trim() ||
-        `Persistencia de "${challenge.criticalFriction.trim() || 'la fricción central'}" sin nueva evidencia.`,
-      expectedOutcome: 'Estancamiento del indicador principal y repetición del mismo patrón en 30 días.',
-      recommended: false
-    },
-    {
-      optionTitle: 'Opción 2 · Experimento controlado + Ajuste legítimo de reglas (Recomendada)',
-      originPhase: 'Fase B · Decodificación → Fase C · Mundo Real',
-      resourcesRequired: `Bajo costo y reversible dentro de: ${primaryConstraint}.`,
-      keyRisk:
-        'Riesgo acotado y reversible en 48h–7 días; exige disciplina para medir datos reales sin sesgo.',
-      expectedOutcome:
-        experiments[0]?.successIndicator ||
-        `Evidencia verificable sobre "${challenge.primaryMetric.trim() || 'el indicador objetivo'}" antes de escalar.`,
-      recommended: true
-    },
-    {
-      optionTitle: 'Opción 3 · Prototipo acotado de posibilidad radical (Mundo Simulado)',
-      originPhase: 'Fase A · Mundo Simulado (Carroll / Niño de 8 años)',
-      resourcesRequired:
-        '10% de recursos en un frente aislado (piloto con 1 flujo o 3 casos reales) antes de comprometer estructura.',
-      keyRisk:
-        'Resistencia inicial por romper convenciones habituales si no se acompaña de la narrativa de Scheherazade.',
-      expectedOutcome:
-        hackNotes[7]?.trim() ||
-        hackNotes[3]?.trim() ||
-        `Descubrir una vía asimétrica y legalmente viable hacia "${challenge.expectedOutcome.trim() || 'el resultado buscado'}".`,
-      recommended: false
+      hackId: chosenHack.id,
+      hackName: `${chosenHack.title} (${chosenHack.metodo})`,
+      phaseLabel: linkedPower
+        ? `Poder asociado: ${linkedPower.title}`
+        : 'Sin poderDeSherezadeId asignado en catálogo',
+      deliverableTitle: chosenHack.subtitle,
+      content:
+        filledPlantillaText ||
+        'Plantilla metodológica pendiente de completar por el participante en la Fase 3.',
+      epistemicTag: 'Hipótesis'
     }
   ];
 
-  // 8. PRÓXIMOS PASOS DEFENDIBLES Y PUENTE A LA SESIÓN EN VIVO
-  const defensibleNextStep =
-    experiments[0]
-      ? `Ejecutar en ${experiments[0].executionWindow} la prueba controlada "${experiments[0].concreteAction}" midiendo "${experiments[0].successIndicator}" bajo condición reversible.`
-      : `Ejecutar en las próximas 48–72 horas una variación mínima y reversible sobre "${
-          challenge.criticalFriction.trim() || focusLabel
-        }" registrando el dato base de "${challenge.primaryMetric.trim() || 'tu indicador principal'}".`;
+  // 6. ORIENTACIÓN SRAP Y RUTA INICIAL
+  const nextSteps: string[] = [
+    `Acción inmediata (SRAP · Activar): ${effectiveSrap.activar}`,
+    `Paso concreto en 24–72 h: ${effectiveSrap.immediateStep24h}`,
+    `Siguiente paso tras revisión: ${effectiveSrap.nextStepAfterPause}`
+  ];
 
-  const nextSteps: string[] = [defensibleNextStep];
-  if (experiments[1]) {
-    nextSteps.push(
-      `Segunda verificación (${experiments[1].executionWindow}): ${experiments[1].concreteAction} (Criterio: ${experiments[1].successIndicator}).`
-    );
-  } else if (uncertainties[0]) {
-    nextSteps.push(`Capturar un hecho observable para despejar la incertidumbre prioritaria: ${uncertainties[0]}`);
-  }
+  const pauseCriteria: string[] = [effectiveSrap.pausa];
 
-  if (selectedHacks[0]) {
-    const customNote = hackNotes[selectedHacks[0].id]?.trim();
-    nextSteps.push(
-      customNote
-        ? `Consolidar ${selectedHacks[0].archetypeName}: ${customNote}`
-        : `Aplicar ${selectedHacks[0].name} para producir: ${selectedHacks[0].expectedDeliverable}.`
-    );
-  }
+  const criticalPoints: string[] = [
+    `Sincronización real: ${effectiveSrap.sincronizar}`,
+    `Patrón reconocido: ${effectiveSrap.reconocer}`
+  ];
+
+  const primaryConstraint =
+    challenge.constraintsSummary?.trim() ||
+    strategicProfile.realConstraints[0] ||
+    'Tiempo y capacidad disponibles actualmente';
+
+  const realWorldOptions: RealWorldOptionComparison[] = [
+    {
+      optionTitle: 'Continuar con el enfoque previo sin cambios',
+      originPhase: 'Inercia previa observada',
+      resourcesRequired: `Consume recursos actuales sobre: ${primaryConstraint}.`,
+      keyRisk:
+        challenge.previousAttempts?.trim()
+          ? `Repetir el mismo resultado de intentos previos ("${challenge.previousAttempts.trim().slice(0, 80)}…").`
+          : `Mantener activa la fricción "${challenge.criticalFriction.trim() || focusLabel}".`,
+      expectedOutcome: 'Sin evidencia nueva para destrabar el objetivo deseado.',
+      recommended: false
+    },
+    {
+      optionTitle: `Ruta Inicial con ${chosenHack.title} + Protocolo SRAP (Recomendada)`,
+      originPhase: `Fase 3 (${chosenHack.title}) → Fase 4 (SRAP)`,
+      resourcesRequired: `Acción proporcionada dentro de: ${primaryConstraint}.`,
+      keyRisk: `Acotado mediante el criterio explícito de pausa: ${effectiveSrap.pausa.slice(0, 95)}…`,
+      expectedOutcome:
+        challenge.expectedOutcome.trim() ||
+        'Obtener una señal verificable que valide o corrija la hipótesis de trabajo.',
+      recommended: true
+    }
+  ];
 
   const liveSessionBrief: LiveSessionBrief = {
     criticalNode:
       challenge.criticalFriction.trim() ||
-      `Tensión entre el estado actual y "${challenge.expectedOutcome.trim() || focusLabel}"`,
-    defensibleNextStep,
+      `Fricción principal hacia "${challenge.expectedOutcome.trim() || focusLabel}"`,
+    defensibleNextStep: effectiveSrap.immediateStep24h,
+    pauseCriterion: effectiveSrap.pausa,
     questionsForLiveSession: [
-      uncertainties[0] ||
-        '¿Qué variable crítica falta medir para confirmar la hipótesis principal sin asumir causalidad?',
-      isOrg
-        ? '¿Qué regla explícita e incentivo legítimo destraba a los actores clave sin aumentar burocracia?'
-        : '¿Cómo convertir la posibilidad más potente del Mundo Simulado en un primer acuerdo o validación real esta semana?',
-      '¿Qué frente secundario descartaremos durante los próximos 30 días para proteger la ejecución?'
+      uncertainties[0] || '¿Qué evidencia real arrojó la primera acción activada con SRAP?',
+      `¿Cómo profundizar la plantilla de "${chosenHack.title}" a partir de la respuesta observada?`,
+      '¿Qué restricción o acuerdo clave debe ajustarse antes de dar el siguiente paso?'
     ],
     preparationChecklist: [
-      `Llevar cuantificada la línea base de: ${challenge.primaryMetric.trim() || 'indicador objetivo'}.`,
-      'Revisar la separación entre Hechos, Hipótesis y Posibilidades imaginadas de este informe.',
-      experiments.length > 0
-        ? `Traer las primeras señales observadas del experimento "${experiments[0].concreteAction.slice(0, 70)}...".`
-        : 'Seleccionar cuál de las 3 opciones del Mundo Real pondremos a prueba primero.'
+      `Traer completados los 3 campos de la plantilla de ${chosenHack.title}.`,
+      `Registrar qué ocurrió al ejecutar: "${effectiveSrap.immediateStep24h.slice(0, 80)}".`,
+      `Verificar si se activó o no el criterio de pausa definido en SRAP.`
     ]
   };
 
   const summaryChallenge = challenge.expectedOutcome.trim()
-    ? `[${trackLabel}] Resolver "${challenge.criticalFriction.trim() || focusLabel}" para lograr "${challenge.expectedOutcome.trim()}", verificado mediante: ${challenge.primaryMetric.trim() || 'indicador objetivo por confirmar'}.`
-    : `[${trackLabel}] Decodificar y reconfigurar "${focusLabel}" separando hechos observados, hipótesis del sistema y posibilidades imaginadas.`;
+    ? `[${trackLabel} · ${challenge.domain || 'Negocios'}] Superar "${
+        challenge.criticalFriction.trim() || focusLabel
+      }" para alcanzar "${challenge.expectedOutcome.trim()}", medido mediante: ${
+        challenge.primaryMetric.trim() || 'criterio observable por precisar'
+      }.`
+    : `[${trackLabel}] Exploración y decodificación de "${focusLabel}" aplicando ${chosenHack.title} y orientación SRAP.`;
 
   const keyInsight = strategicProfile.strategicHypothesis.trim()
-    ? `Hipótesis rectora de reconfiguración: ${strategicProfile.strategicHypothesis.trim()}`
-    : isOrg
-    ? `En "${focusLabel}", el desbloqueo real exige alinear reglas declaradas con incentivos legítimos (Hacker) y validar con variaciones reversibles (Trickster) antes de reestructurar todo el sistema.`
-    : `En "${focusLabel}", la tracción aparece al reencuadrar el valor real sin falsear hechos (Scheherazade) y someter el supuesto principal a una prueba pequeña y medible en el Mundo Real.`;
+    ? strategicProfile.strategicHypothesis.trim()
+    : `Al aplicar "${chosenHack.title}" (${chosenHack.metodo}) y aterrizarlo con SRAP, el caso pasa de repetir intentos previos a ejecutar una acción proporcionada con criterio explícito de pausa.`;
 
-  const hackNamesShort = selectedHacks.map((h) => h.archetypeName).join(' · ');
-  const tacticalMantra =
-    challenge.explorationFocus === 'Idea por validar'
-      ? 'IMAGINA SIN LÍMITES EN SIMULACIÓN; VALIDA EN PEQUEÑO CON HECHOS REALES.'
-      : isOrg
-      ? 'ALINEA INCENTIVOS LEGÍTIMOS Y REGLAS CLARAS EN LUGAR DE MULTIPLICAR CONTROLES.'
-      : 'CAMBIA EL ENCUADRE SIN FALSEAR HECHOS Y PRUEBA CON RIESGO REVERSIBLE.';
+  const tacticalMantra = effectiveSrap.immediateStep24h;
 
-  const defensiveMoat =
-    selectedHacks.length > 0
-      ? `Arquitectura combinada (${hackNamesShort}) que conecta Mundo Simulado y Decodificación del Sistema para sostener: ${
-          challenge.primaryMetric.trim() || 'el criterio de éxito definido'
-        }.`
-      : 'Rigor metodológico: distinción estricta entre hechos, hipótesis y posibilidades con validación reversible.';
+  const defensiveMoat = linkedPower
+    ? `Aplicación focalizada de 1 Hack central (${chosenHack.title} ↔ ${linkedPower.title}) calibrada con SRAP sobre restricciones reales.`
+    : `Aplicación focalizada de 1 Hack central (${chosenHack.title}) calibrada con SRAP sobre restricciones reales.`;
 
   const nonNegotiables: string[] = [
-    'Ética y legalidad estricta: buscar ventajas legítimas dentro de las reglas; jamás engañar personas ni falsear hechos.',
-    'Rigor epistémico: no tratar correlaciones ni intuiciones como causalidad demostrada sin verificación controlada.',
-    challenge.primaryMetric.trim()
-      ? `Evaluar decisiones con base en el criterio observable: ${challenge.primaryMetric.trim()}.`
-      : 'Definir un umbral numérico claro antes de escalar tiempo o presupuesto.'
+    `Respetar las condiciones reales sincronizadas: ${primaryConstraint}.`,
+    `Criterio de pausa obligatorio (SRAP): ${effectiveSrap.pausa}`,
+    'Tratar hipótesis y arquetipos como lecturas sujetas a evidencia, nunca como conclusiones cerradas sin datos.'
   ];
 
   const strategicMap: StrategicMapData = {
     summaryChallenge,
     keyInsight,
-    prioritizedHackKeys: selectedHacks.map((h) => h.key),
+    prioritizedHackKeys: [chosenHack.title.toLowerCase().replace(/\s+/g, '-')],
     tacticalMantra,
     defensiveMoat,
     nonNegotiables,
@@ -406,6 +436,7 @@ export function deriveSynthesisFromResponses(state: DiscoveryDeliverableState): 
     uncertainties,
     criticalPoints,
     nextSteps,
+    pauseCriteria,
     hackDeliverables,
     realWorldOptions,
     liveSessionBrief,
@@ -421,107 +452,61 @@ export function deriveSynthesisFromResponses(state: DiscoveryDeliverableState): 
   const recommendedPlan: ActionPlanWeek[] = [
     {
       weekNumber: 1,
-      title: 'Semana 1: Línea Base de Hechos y Reencuadre (Fase A → Fase B)',
-      focusObjective: `Ordenar hechos reales sobre "${focusLabel}", activar narrativa honesta y alinear la sesión en vivo.`,
+      title: '1. Acción Inmediata (SRAP · Activar · 24–72 h)',
+      focusObjective: 'Ejecutar el primer movimiento concreto y proporcionado derivado del Hack aplicado.',
       tasks: [
         {
-          id: `w1-${Date.now()}-1`,
-          label: `Registrar dato base verificable de: ${
-            challenge.primaryMetric.trim() || 'tu indicador primario'
-          }.`,
+          id: `r1-${Date.now()}-1`,
+          label: effectiveSrap.immediateStep24h,
           completed: false,
-          targetDay: 'Días 1–2',
-          kpi: 'Hecho base documentado'
+          targetDay: '24–72 h',
+          kpi: challenge.primaryMetric.trim() || 'Acción ejecutada y observada'
         },
-        {
-          id: `w1-${Date.now()}-2`,
-          label: hackNotes[1]?.trim()
-            ? `Aplicar narrativa estratégica (Scheherazade): ${hackNotes[1].trim()}`
-            : strategicProfile.artificialConstraints[0]
-            ? `Suspender de forma controlada la barrera autoimpuesta: "${strategicProfile.artificialConstraints[0]}".`
-            : `Aislar el nodo crítico para la sesión en vivo: "${liveSessionBrief.criticalNode}".`,
-          completed: false,
-          targetDay: 'Días 3–5',
-          kpi: 'Encuadre validado'
-        }
+        ...(plantillaItems[0]?.respuesta
+          ? [
+              {
+                id: `r1-${Date.now()}-2`,
+                label: `Sostener encuadre de ${chosenHack.title} (${plantillaItems[0].aspecto}): ${plantillaItems[0].respuesta}`,
+                completed: false,
+                targetDay: 'Durante la prueba',
+                kpi: 'Aplicación fiel de la plantilla'
+              }
+            ]
+          : [])
       ]
     },
     {
       weekNumber: 2,
-      title: 'Semana 2: Experimentos Controlados y Reversibles (Trickster + Datos)',
-      focusObjective:
-        'Contrastar hipótesis en terreno con variaciones pequeñas y reversibles sin asumir causalidad previa.',
-      tasks:
-        experiments.length > 0
-          ? experiments.map((exp, idx) => ({
-              id: `w2-${Date.now()}-${idx}`,
-              label: `[${exp.hackName}] ${exp.concreteAction}`,
-              completed: exp.status === 'Validado',
-              targetDay: exp.executionWindow,
-              kpi: exp.successIndicator
-            }))
-          : [
-              {
-                id: `w2-${Date.now()}-1`,
-                label: `Ejecutar prueba reversible para despejar: "${uncertainties[0]}".`,
-                completed: false,
-                targetDay: 'Días 8–12',
-                kpi: 'Señal observada registrada'
-              }
-            ]
-    },
-    {
-      weekNumber: 3,
-      title: 'Semana 3: Reconfiguración Legítima de Reglas e Incentivos (Hacker)',
-      focusObjective: `Convertir lo aprendido en reglas explícitas usando ${
-        hackNamesShort || 'los hacks priorizados'
-      }.`,
+      title: '2. Revisión y Criterio de Pausa (SRAP · Pausa · Días 4–10)',
+      focusObjective: 'Evaluar datos reales frente a las incertidumbres y detener o corregir si se activa la condición de pausa.',
       tasks: [
         {
-          id: `w3-${Date.now()}-1`,
-          label: hackNotes[4]?.trim()
-            ? `Implementar punto de influencia legítimo (Hacker): ${hackNotes[4].trim()}`
-            : `Establecer regla operativa explícita basada en: "${nonNegotiables[2]}".`,
+          id: `r2-${Date.now()}-1`,
+          label: `Evaluar criterio de pausa: ${effectiveSrap.pausa}`,
           completed: false,
-          targetDay: 'Días 15–18',
-          kpi: 'Regla activa y transparente'
+          targetDay: 'Día 4–7',
+          kpi: 'Revisión objetiva completada'
         },
         {
-          id: `w3-${Date.now()}-2`,
-          label: isOrg
-            ? `Formalizar acuerdo de umbrales e incentivos con ${
-                strategicProfile.dependencyScope?.toLowerCase() || 'los actores del sistema'
-              }.`
-            : 'Proteger bloques de ejecución enfocada eliminando frentes que no mueven la métrica.',
+          id: `r2-${Date.now()}-2`,
+          label: `Contrastar incertidumbre prioritaria: ${uncertainties[0]}`,
           completed: false,
-          targetDay: 'Días 19–21',
-          kpi: 'Acuerdo / bloque cumplido'
+          targetDay: 'Día 7–10',
+          kpi: 'Evidencia registrada'
         }
       ]
     },
     {
-      weekNumber: 4,
-      title: 'Semana 4: Contraste en Mundo Real y Decisión Basada en Evidencia',
-      focusObjective: `Evaluar resultados reales hacia "${
-        challenge.expectedOutcome.trim() || 'el objetivo esperado'
-      }" y decidir escalado o ajuste.`,
+      weekNumber: 3,
+      title: '3. Siguiente Paso de la Ruta Inicial (Días 11–30)',
+      focusObjective: 'Consolidar lo validado o llevar los hallazgos concretos a la sesión de trabajo en vivo.',
       tasks: [
         {
-          id: `w4-${Date.now()}-1`,
-          label: `Comparar dato final observado contra línea base en: ${
-            challenge.primaryMetric.trim() || 'indicador principal'
-          }.`,
+          id: `r3-${Date.now()}-1`,
+          label: effectiveSrap.nextStepAfterPause,
           completed: false,
-          targetDay: 'Días 24–28',
-          kpi: 'Hipótesis confirmada o refutada'
-        },
-        {
-          id: `w4-${Date.now()}-2`,
-          label:
-            'Actualizar el Informe Ejecutivo de Sesión con hechos validados y definir siguiente ciclo.',
-          completed: false,
-          targetDay: 'Día 30',
-          kpi: 'Informe PDF actualizado'
+          targetDay: 'Días 11–30',
+          kpi: challenge.expectedOutcome.trim() || 'Siguiente tramo decidido con evidencia'
         }
       ]
     }
@@ -533,44 +518,22 @@ export function deriveSynthesisFromResponses(state: DiscoveryDeliverableState): 
 export function buildDraftExperimentFromState(
   state: DiscoveryDeliverableState
 ): Omit<LabExperimentItem, 'id'> {
-  const { challenge, strategicProfile, selectedHackIds } = state;
-  const isOrg = challenge.track === 'organizacion';
-  const recommended = computeRecommendedHacks(challenge, strategicProfile);
-  const chosenHackId =
-    selectedHackIds.find((id) => id === 5 || id === 6 || id === 4) ||
-    selectedHackIds[0] ||
-    recommended[0]?.hackId ||
-    5;
-  const hackObj =
-    SEVEN_MAGISTRAL_HACKS.find((h) => h.id === chosenHackId) || SEVEN_MAGISTRAL_HACKS[4];
-
-  const targetUncertainty =
-    strategicProfile.uncertainties?.[0] ||
-    strategicProfile.conditionalProfileAnswers?.evidence_gap ||
-    strategicProfile.underlyingAssumptions?.[0] ||
-    challenge.criticalFriction ||
-    'la fricción principal';
+  const srap = deriveSrapFromCase(state);
+  const chosenHack =
+    (state.selectedHackId ? HACKS_DATA.find((h) => h.id === state.selectedHackId) : null) ||
+    HACKS_DATA[0];
 
   return {
-    hackId: hackObj.id,
-    hackName: `${hackObj.archetypeName} — ${hackObj.subtitle}`,
-    hypothesis: `Hipótesis medible: Si introducimos una variación pequeña y reversible con "${hackObj.archetypeName}" sobre "${targetUncertainty.slice(
-      0,
-      100
-    )}", obtendremos datos observados sin asumir causalidad previa.`,
-    concreteAction: isOrg
-      ? `Aplicar piloto acotado en un solo flujo o equipo orientado a "${
-          challenge.expectedOutcome.trim().slice(0, 85) || 'destrabar el nodo crítico'
-        }" midiendo antes y después.`
-      : `Ejecutar prueba mínima reversible orientada a "${
-          challenge.expectedOutcome.trim().slice(0, 85) || 'validar respuesta real'
-        }" y registrar datos observados.`,
-    executionWindow:
-      strategicProfile.urgencyLevel === 'Inmediata (24–72h)' ? '24 Horas' : '48 Horas',
+    hackId: chosenHack.id,
+    hackName: `${chosenHack.title} — ${chosenHack.metodo}`,
+    hypothesis:
+      state.strategicProfile.strategicHypothesis.trim() ||
+      `Hipótesis de trabajo aplicada con ${chosenHack.title}`,
+    concreteAction: srap.immediateStep24h,
+    executionWindow: '48 Horas',
     successIndicator:
-      challenge.primaryMetric.trim() || 'Dato observable registrado al cierre de la ventana',
-    reversibilityNote:
-      'Variación acotada y 100% reversible si no se cumple el umbral esperado.',
+      state.challenge.primaryMetric.trim() || 'Evidencia observable registrada',
+    reversibilityNote: srap.pausa,
     status: 'Propuesto'
   };
 }
@@ -579,9 +542,20 @@ export function mergeActionPlanPreservingCustomTasks(
   recommendedPlan: ActionPlanWeek[],
   existingPlan: ActionPlanWeek[]
 ): ActionPlanWeek[] {
+  // Recolectar todas las tareas personalizadas existentes por número de tramo; si estaban en semana 4 (legado), conservarlas en el último tramo
+  const allExistingCustomByWeek = new Map<number, ActionPlanWeek['tasks']>();
+  const maxRecWeek = recommendedPlan.length;
+
+  (existingPlan || []).forEach((prevWeek) => {
+    const customTasks = (prevWeek.tasks || []).filter((t) => t.isCustom);
+    if (customTasks.length === 0) return;
+    const targetBucket = Math.min(Math.max(1, prevWeek.weekNumber), maxRecWeek);
+    const current = allExistingCustomByWeek.get(targetBucket) || [];
+    allExistingCustomByWeek.set(targetBucket, [...current, ...customTasks]);
+  });
+
   return recommendedPlan.map((recWeek) => {
-    const prevWeek = existingPlan.find((w) => w.weekNumber === recWeek.weekNumber);
-    const customTasks = (prevWeek?.tasks || []).filter((t) => t.isCustom);
+    const customTasks = allExistingCustomByWeek.get(recWeek.weekNumber) || [];
     return {
       ...recWeek,
       tasks: [...recWeek.tasks, ...customTasks]
@@ -608,6 +582,15 @@ export function sanitizeActivePayloadForProcessing(state: DiscoveryDeliverableSt
     }
   });
 
+  const chosenHack = state.selectedHackId
+    ? HACKS_DATA.find((h) => h.id === state.selectedHackId) || null
+    : null;
+  const linkedPower = chosenHack ? getPoderForHack(chosenHack) : null;
+  const plantillaAnswered = formatHackPlantillaSummary(
+    state.selectedHackId,
+    state.hackPlantillaResponses
+  );
+
   return {
     challenge: {
       ...challenge,
@@ -617,8 +600,17 @@ export function sanitizeActivePayloadForProcessing(state: DiscoveryDeliverableSt
     strategicProfile: {
       ...strategicProfile,
       conditionalProfileAnswers: activeStep2Answers
-    }
+    },
+    selectedHack: chosenHack
+      ? {
+          id: chosenHack.id,
+          title: chosenHack.title,
+          metodo: chosenHack.metodo,
+          linkedPower: linkedPower ? linkedPower.title : null,
+          plantillaResponses: plantillaAnswered
+        }
+      : null,
+    powerLens: state.powerLens?.used ? state.powerLens : null,
+    srapOrientation: state.srapOrientation
   };
 }
-
-

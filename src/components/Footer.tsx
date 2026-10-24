@@ -1,8 +1,6 @@
 import React from 'react';
-import {
-  DISCOVERY_SYNTHESIS_STEP,
-  DISCOVERY_REPORT_STEP
-} from '../data/discoveryFlowConfig';
+import { DISCOVERY_FIVE_PHASES } from '../data/discoveryFlowConfig';
+import { ChalamandraMedallion } from './ChalamandraSeal';
 
 interface FooterProps {
   onOpenStartScreen: () => void;
@@ -11,61 +9,39 @@ interface FooterProps {
 
 export default function Footer({ onOpenStartScreen, onSelectModule }: FooterProps) {
   return (
-    <footer className="no-print mt-12 border-t border-slate-900 bg-slate-950 py-8 text-slate-400">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
-        <div className="flex items-center gap-2.5">
-          <img
-            src="/images/chalamandra-emblem.jpg"
-            alt="Emblema Salamandra"
-            referrerPolicy="no-referrer"
-            className="w-6 h-6 rounded-md object-cover ring-1 ring-amber-500/30"
-          />
-          <span>Chalamandra Magistral DecoX · Sesión de Descubrimiento Interactiva</span>
+    <footer className="site-footer no-print relative z-10 mt-16 border-t border-[#D4AF37]/30 bg-[#060509] py-9 text-[#B8B0A0]">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 text-xs">
+        <div className="flex items-center gap-3">
+          <ChalamandraMedallion size="sm" />
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="font-display font-semibold text-[#F7F3EA] tracking-wide">
+              Chalamandra Magistral <span className="text-[#ECC964]">DecoX</span>
+            </span>
+            <span aria-hidden="true" className="text-[#D4AF37]">·</span>
+            <span className="text-[#D6CFC2]">Interactive DecoX</span>
+            <span aria-hidden="true" className="text-[#D4AF37]">·</span>
+            <span>Sesión de Descubrimiento</span>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-5">
           <button
             type="button"
             onClick={onOpenStartScreen}
-            className="hover:text-amber-400 cursor-pointer transition-colors whitespace-nowrap"
+            className="text-[#ECC964] font-semibold hover:text-[#FFF0BE] cursor-pointer transition-colors whitespace-nowrap shrink-0"
           >
-            Pantalla Inicial
+            Portada
           </button>
-          <button
-            type="button"
-            onClick={() => onSelectModule(1)}
-            className="hover:text-amber-400 cursor-pointer transition-colors whitespace-nowrap"
-          >
-            Base · Encuadre
-          </button>
-          <button
-            type="button"
-            onClick={() => onSelectModule(3)}
-            className="hover:text-amber-400 cursor-pointer transition-colors whitespace-nowrap"
-          >
-            Fase A · Mundo Simulado
-          </button>
-          <button
-            type="button"
-            onClick={() => onSelectModule(7)}
-            className="hover:text-amber-400 cursor-pointer transition-colors whitespace-nowrap"
-          >
-            Fase B · Decodificación
-          </button>
-          <button
-            type="button"
-            onClick={() => onSelectModule(DISCOVERY_SYNTHESIS_STEP)}
-            className="hover:text-amber-400 cursor-pointer transition-colors whitespace-nowrap"
-          >
-            Fase C · Mundo Real
-          </button>
-          <button
-            type="button"
-            onClick={() => onSelectModule(DISCOVERY_REPORT_STEP)}
-            className="hover:text-amber-400 cursor-pointer transition-colors whitespace-nowrap"
-          >
-            Informe PDF
-          </button>
+          {DISCOVERY_FIVE_PHASES.map((phase) => (
+            <button
+              key={phase.id}
+              type="button"
+              onClick={() => onSelectModule(phase.num)}
+              className="hover:text-[#FFF0BE] cursor-pointer transition-colors whitespace-nowrap shrink-0 tabular-nums"
+            >
+              {phase.navLabel}
+            </button>
+          ))}
         </div>
       </div>
     </footer>
