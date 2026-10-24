@@ -48,11 +48,11 @@ Cuando se modifique el catálogo en INTERACTIVE-DECOX, revisar y sincronizar la 
 - React + Vite para la interfaz.
 - Express para /api/discovery/* y servicios complementarios.
 - El cliente guarda el borrador en localStorage; los casos demostrativos tienen almacenamiento separado del borrador real.
-- El servidor de sesiones actual utiliza memoria volátil. **No equivale a una base de datos persistente ni garantiza historial entre dispositivos o tras reinicios.**
+- En producción, el servidor guarda las sesiones en Firestore y vincula cada documento a la sesión de compra de Stripe que obtuvo acceso. En desarrollo local utiliza memoria volátil. **La persistencia de producción requiere conceder al service account de Cloud Run el rol `roles/datastore.user`.**
 - El identificador de sesión no es un mecanismo de autenticación.
-- Esta aplicación aún no exige una credencial de compra. Configurar el handoff después del pago no debe confundirse con un control de acceso: hasta implementar autenticación o una concesión firmada de acceso, quien conozca la URL de la aplicación puede abrirla.
+- En producción, el acceso requiere una Checkout Session pagada de Stripe que coincida con el precio configurado. El servidor emite una cookie HttpOnly, Secure y firmada con caducidad de siete días; los endpoints de la sesión quedan protegidos. El handoff desde Interactive debe enviar `session_id` a la URL de esta aplicación.
 
-Antes de ofrecer almacenamiento de historial, acceso exclusivo de pago o uso multiusuario, implementar persistencia de datos y controles de acceso con pruebas de aislamiento.
+Antes de producción, ejecutar pruebas de aislamiento de sesiones y una compra de prueba completa. La verificación de Stripe y la cookie firmada están implementadas en el servidor; las credenciales y permisos de Google Cloud aún deben configurarse.
 
 ## Despliegue en contenedor (Cloud Run)
 
@@ -68,7 +68,7 @@ bun run build
 PORT=8080 NODE_ENV=production bun run start
 ```
 
-**Bloqueos conocidos antes de producción:** el proyecto Google Cloud de destino debe tener facturación habilitada y Cloud Run configurado. Además, `/api/discovery/save` y `/api/discovery/load` aún usan memoria volátil; el identificador de sesión no autentica al usuario. No usar este despliegue como entrega pagada multiusuario hasta implementar y probar persistencia duradera y autorización de acceso.
+**Bloqueos conocidos antes de producción:** el proyecto Google Cloud de destino debe tener facturación habilitada, Cloud Run configurado y el service account con `roles/datastore.user`. Configura `STRIPE_SECRET_KEY`, `STRIPE_DISCOVERY_PRICE_ID` y un `SESSION_TOKEN_SECRET` aleatorio mediante Secret Manager. La aplicación se despliega exclusivamente como contenedor Cloud Run; los handlers duplicados de Vercel se retiraron para que no exista una ruta de API alternativa sin las mismas protecciones.
 
 ## Desarrollo y validación
 
@@ -96,8 +96,8 @@ Validación manual mínima:
 ## Integración comercial: checklist de liberación
 
 - [ ] Desplegar esta aplicación de forma independiente y probar / y /api/discovery/capabilities.
-- [ ] Configurar VITE_DISCOVERY_APP_URL en INTERACTIVE-DECOX con la URL real ya verificada.
+- [ ] Configurar `VITE_DISCOVERY_APP_URL` en INTERACTIVE-DECOX con la URL real ya verificada.
 - [ ] Confirmar que VITE_STRIPE_DISCOVERY_URL lleva al producto correcto de USD 27.
 - [ ] Completar una compra de prueba de Stripe y comprobar que sólo tras la verificación server-side aparece el enlace de entrega.
-- [ ] Decidir e implementar el control de acceso si el producto no debe ser público.
+- [ ] Probar que una sesión pagada accede y que una sesión no pagada o de otra compra no puede leer ni sobrescribir los datos.
 - [ ] Mantener INTERACTIVE-DECOX como responsable del checkout y esta aplicación como responsable del diagnóstico y sus entregables.

@@ -1,4 +1,6 @@
 import express from 'express';
+import { Firestore } from '@google-cloud/firestore';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
@@ -59,6 +61,84 @@ function classifyUpstreamError(err: any): { code: string; userMessage: string } 
   };
 }
 
+const ACCESS_COOKIE = 'decox_discovery_access';
+const ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
+const DISCOVERY_PRICE_ID = process.env.STRIPE_DISCOVERY_PRICE_ID?.trim() || '';
+const accessSecret = process.env.SESSION_TOKEN_SECRET?.trim() || '';
+const firestore = new Firestore({ projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT });
+const localDiscoveryStore = new Map<string, any>();
+
+type AccessClaims = { checkoutSessionId: string; exp: number };
+function signAccessToken(claims: AccessClaims): string {
+  if (!accessSecret) throw new Error('SESSION_TOKEN_SECRET is not configured');
+  const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+  const signature = createHmac('sha256', accessSecret).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+function readAccessClaims(token: unknown): AccessClaims | null {
+  if (typeof token !== 'string' || !accessSecret) return null;
+  const [payload, signature, extra] = token.split('.');
+  if (!payload || !signature || extra) return null;
+  const expected = createHmac('sha256', accessSecret).update(payload).digest();
+  let supplied: Buffer;
+  try { supplied = Buffer.from(signature, 'base64url'); } catch { return null; }
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as AccessClaims;
+    if (!claims.checkoutSessionId || !Number.isFinite(claims.exp) || claims.exp <= Math.floor(Date.now() / 1000)) return null;
+    return claims;
+  } catch { return null; }
+}
+function requestAccessClaims(req: express.Request): AccessClaims | null {
+  const cookies = req.headers.cookie || '';
+  const match = cookies.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${ACCESS_COOKIE}=`));
+  return readAccessClaims(match ? match.slice(ACCESS_COOKIE.length + 1) : null);
+}
+async function verifyStripeCheckoutSession(sessionId: unknown): Promise<string | null> {
+  if (typeof sessionId !== 'string' || !/^cs_[A-Za-z0-9_]+$/.test(sessionId) || !process.env.STRIPE_SECRET_KEY?.trim() || !DISCOVERY_PRICE_ID) return null;
+  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}?expand%5B%5D=line_items.data.price`, {
+    headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY.trim()}` },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) return null;
+  const session = await response.json() as { id?: string; payment_status?: string; currency?: string; amount_total?: number; line_items?: { data?: Array<{ price?: { id?: string | null } | null }> } };
+  const priceIds = new Set((session.line_items?.data || []).map((item) => item.price?.id).filter((id): id is string => Boolean(id)));
+  if (session.id !== sessionId || session.payment_status !== 'paid' || session.currency !== 'usd' || session.amount_total !== 2700 || !priceIds.has(DISCOVERY_PRICE_ID)) return null;
+  return sessionId;
+}
+function setAccessCookie(res: express.Response, checkoutSessionId: string): void {
+  const token = signAccessToken({ checkoutSessionId, exp: Math.floor(Date.now() / 1000) + ACCESS_TOKEN_TTL_SECONDS });
+  res.setHeader('Set-Cookie', `${ACCESS_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ACCESS_TOKEN_TTL_SECONDS}`);
+}
+function requirePaidAccess(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  if (process.env.NODE_ENV !== 'production') { next(); return; }
+  if (!requestAccessClaims(req)) { res.status(401).json({ success: false, code: 'PAYMENT_ACCESS_REQUIRED', error: 'Se requiere una sesión de compra verificada para continuar.' }); return; }
+  next();
+}
+async function saveDurableSession(sessionId: string, state: Record<string, any>, owner: string): Promise<string> {
+  const savedAt = new Date().toISOString();
+  if (process.env.NODE_ENV !== 'production') {
+    localDiscoveryStore.set(sessionId, { ...state, sessionId, serverSavedAt: savedAt, ownerCheckoutSessionId: owner });
+    return savedAt;
+  }
+  const ref = firestore.collection('discoverySessions').doc(sessionId);
+  await firestore.runTransaction(async (tx) => {
+    const existing = await tx.get(ref);
+    if (existing.exists && existing.get('ownerCheckoutSessionId') !== owner) throw new Error('SESSION_OWNERSHIP_CONFLICT');
+    tx.set(ref, { ...state, sessionId, serverSavedAt: savedAt, ownerCheckoutSessionId: owner }, { merge: true });
+  });
+  return savedAt;
+}
+async function loadDurableSession(sessionId: string, owner: string): Promise<any | null> {
+  if (process.env.NODE_ENV !== 'production') {
+    const stored = localDiscoveryStore.get(sessionId);
+    return stored?.ownerCheckoutSessionId === owner ? stored : null;
+  }
+  const snapshot = await firestore.collection('discoverySessions').doc(sessionId).get();
+  if (!snapshot.exists || snapshot.get('ownerCheckoutSessionId') !== owner) return null;
+  return snapshot.data() || null;
+}
+
 const VALID_SESSION_ID_REGEX = /^(DX|DEMO)-[A-Z0-9]{4,20}-[A-Z0-9]{4,20}$/;
 
 function normalizeValidSessionId(candidate: unknown): string | null {
@@ -75,6 +155,23 @@ async function startServer() {
   app.use(express.json({ limit: '2mb' }));
 
   app.get('/healthz', (_req, res) => res.status(200).json({ status: 'ok' }));
+
+  app.get('/api/access/verify', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!accessSecret || !process.env.STRIPE_SECRET_KEY?.trim() || !DISCOVERY_PRICE_ID) {
+      return res.status(503).json({ success: false, code: 'PAYMENT_ACCESS_NOT_CONFIGURED' });
+    }
+    try {
+      const checkoutSessionId = await verifyStripeCheckoutSession(req.query.session_id);
+      if (!checkoutSessionId) return res.status(403).json({ success: false, code: 'PAYMENT_NOT_VERIFIED' });
+      setAccessCookie(res, checkoutSessionId);
+      return res.status(200).json({ success: true, verified: true, service: 'discovery' });
+    } catch {
+      return res.status(502).json({ success: false, code: 'PAYMENT_VERIFICATION_UNAVAILABLE' });
+    }
+  });
+
+  app.use(['/api/discovery', '/api/gemini', '/api/image-studio'], requirePaidAccess);
 
   // AI Strategic Image Studio Generation
   app.post('/api/image-studio/generate', async (req, res) => {
@@ -253,83 +350,39 @@ Categoría de consulta: ${category || 'General'}.`;
     }
   });
 
-  // Discovery Deliverable Server-Side Persistence (Volatile In-Memory Store, Session-Isolated)
-  const MAX_STORED_SESSIONS = 200;
-  const discoveryStore = new Map<string, any>();
-
-  app.get('/api/discovery/capabilities', (_req, res) => {
-    const ai = getGenAIClient();
-    return res.json({
-      success: true,
-      aiConfigured: Boolean(ai),
-      persistenceMode: 'volatile_server_memory',
-      clientStorage: 'browser_localStorage'
-    });
-  });
-
-  app.post('/api/discovery/save', (req, res) => {
+  // Discovery session persistence: Firestore in production, memory only in local development.
+  app.post('/api/discovery/save', async (req, res) => {
     try {
       const { clientId, deliverableState } = req.body || {};
-      if (!deliverableState || typeof deliverableState !== 'object') {
-        return res.status(400).json({ success: false, error: 'Faltan datos de la sesión.' });
-      }
+      if (!deliverableState || typeof deliverableState !== 'object') return res.status(400).json({ success: false, error: 'Faltan datos de la sesión.' });
       const normalizedClientId = normalizeValidSessionId(clientId);
       const normalizedStateId = normalizeValidSessionId(deliverableState.sessionId);
-      if (normalizedClientId && normalizedStateId && normalizedClientId !== normalizedStateId) {
-        return res.status(400).json({
-          success: false,
-          error: 'Conflicto de identificador de sesión (clientId y sessionId no coinciden).'
-        });
-      }
+      if (normalizedClientId && normalizedStateId && normalizedClientId !== normalizedStateId) return res.status(400).json({ success: false, error: 'Conflicto de identificador de sesión (clientId y sessionId no coinciden).' });
       const effectiveId = normalizedClientId || normalizedStateId;
-      if (!effectiveId) {
-        return res.status(400).json({
-          success: false,
-          error: 'Se requiere un identificador de sesión único válido (formato DX-... o DEMO-...).'
-        });
-      }
-      if (!discoveryStore.has(effectiveId) && discoveryStore.size >= MAX_STORED_SESSIONS) {
-        const oldestKey = discoveryStore.keys().next().value;
-        if (oldestKey) discoveryStore.delete(oldestKey);
-      }
-      const savedAt = new Date().toISOString();
-      discoveryStore.set(effectiveId, {
-        ...deliverableState,
-        sessionId: effectiveId,
-        serverSavedAt: savedAt
-      });
-      return res.json({
-        success: true,
-        sessionId: effectiveId,
-        persistenceMode: 'volatile_server_memory',
-        authNotice: 'session_id_is_operational_not_authentication',
-        message: 'Sesión sincronizada en memoria temporal volátil del servidor',
-        savedAt
-      });
-    } catch {
+      if (!effectiveId) return res.status(400).json({ success: false, error: 'Se requiere un identificador de sesión único válido (formato DX-... o DEMO-...).' });
+      const claims = requestAccessClaims(req);
+      const owner = claims?.checkoutSessionId || (process.env.NODE_ENV !== 'production' ? 'local-development' : '');
+      if (!owner) return res.status(401).json({ success: false, code: 'PAYMENT_ACCESS_REQUIRED' });
+      const savedAt = await saveDurableSession(effectiveId, deliverableState, owner);
+      return res.json({ success: true, sessionId: effectiveId, persistenceMode: process.env.NODE_ENV === 'production' ? 'firestore' : 'local_memory', message: 'Sesión guardada', savedAt });
+    } catch (err: any) {
+      if (err?.message === 'SESSION_OWNERSHIP_CONFLICT') return res.status(403).json({ success: false, error: 'Esta sesión pertenece a otra compra.' });
+      console.error('[discovery/save] persistence failed');
       return res.status(500).json({ success: false, error: 'Error guardando la sesión' });
     }
   });
 
-  app.get('/api/discovery/load', (req, res) => {
+  app.get('/api/discovery/load', async (req, res) => {
     try {
       const clientId = normalizeValidSessionId(req.query.clientId);
-      if (!clientId) {
-        return res.status(400).json({
-          success: false,
-          error: 'Parámetro clientId válido requerido (formato DX-... o DEMO-...).'
-        });
-      }
-      const stored = discoveryStore.get(clientId) || null;
-      const state = stored && stored.sessionId === clientId ? stored : null;
-      return res.json({
-        success: true,
-        sessionId: clientId,
-        persistenceMode: 'volatile_server_memory',
-        authNotice: 'session_id_is_operational_not_authentication',
-        state
-      });
+      if (!clientId) return res.status(400).json({ success: false, error: 'Parámetro clientId válido requerido (formato DX-... o DEMO-...).' });
+      const claims = requestAccessClaims(req);
+      const owner = claims?.checkoutSessionId || (process.env.NODE_ENV !== 'production' ? 'local-development' : '');
+      if (!owner) return res.status(401).json({ success: false, code: 'PAYMENT_ACCESS_REQUIRED' });
+      const state = await loadDurableSession(clientId, owner);
+      return res.json({ success: true, sessionId: clientId, persistenceMode: process.env.NODE_ENV === 'production' ? 'firestore' : 'local_memory', state });
     } catch {
+      console.error('[discovery/load] persistence failed');
       return res.status(500).json({ success: false, error: 'Error cargando la sesión' });
     }
   });
@@ -467,6 +520,22 @@ REGLAS ESTRICTAS:
       });
     }
   });
+
+  if (process.env.NODE_ENV === 'production') {
+    app.use(async (req, res, next) => {
+      if (req.path.startsWith('/api/') || req.path === '/healthz') return next();
+      if (requestAccessClaims(req)) return next();
+      const candidate = req.query.session_id;
+      try {
+        const checkoutSessionId = await verifyStripeCheckoutSession(candidate);
+        if (!checkoutSessionId || !accessSecret) return res.status(401).type('html').send('<!doctype html><html lang="es"><meta charset="utf-8"><title>Acceso requerido</title><body><h1>Sesión de Descubrimiento</h1><p>Necesitas una compra verificada para acceder. Regresa a Interactive DecoX para completar o recuperar tu acceso.</p></body></html>');
+        setAccessCookie(res, checkoutSessionId);
+        return res.redirect(303, req.path);
+      } catch {
+        return res.status(503).send('No fue posible verificar el acceso en este momento.');
+      }
+    });
+  }
 
   if (process.env.NODE_ENV !== 'production' && path.basename(__dirname) !== 'dist') {
     const vite = await createViteServer({

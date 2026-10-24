@@ -12,6 +12,7 @@
     "catalog:check": "tsx scripts/check-interactive-catalog.ts"
   },
   "dependencies": {
+    "@google-cloud/firestore": "^9.4.0",
     "@google/genai": "^2.4.0",
     "canvas-confetti": "^1.9.4",
     "dotenv": "^17.2.3",
